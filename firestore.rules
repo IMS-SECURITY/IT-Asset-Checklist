@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function myProfile() { return get(/databases/$(database)/documents/employees/$(request.auth.uid)).data; }
+    function isSuper() { return isSignedIn() && myProfile().role == 'superadmin'; }
+    function isAdmin() { return isSignedIn() && myProfile().role == 'admin'; }
+    function isAdminOf(projectId) {
+      return isAdmin() && projectId in myProfile().adminProjects;
+    }
+
+    match /projects/{projectId} {
+      allow read: if isSignedIn();
+      allow write: if isSuper();
+    }
+
+    match /employees/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuper() || isAdmin());
+      allow create, update, delete: if isSuper();
+      // Allow admins to update branches for employees in their projects
+      allow update: if isAdmin() && isAdminOf(resource.data.projectId);
+    }
+
+    // Public name -> email lookup so employees can sign in with their name only.
+    // Contains no secrets: just { email, uid }. Only admins/super can write.
+    match /employeeLogins/{nameKey} {
+      allow read: if true;
+      allow create, update, delete: if isSuper() || isAdmin();
+    }
+
+    match /checklists/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.uid == request.auth.uid ||
+        isSuper() ||
+        isAdminOf(resource.data.projectId)
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        docId == request.auth.uid + '_' + request.resource.data.date;
+      allow update, delete: if isSuper() || isAdminOf(resource.data.projectId);
+    }
+
+    // Extra recipients for the daily summary email, managed by super admin.
+    match /emailRecipients/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSuper();
+    }
+
+    // Private config (e.g. GitHub PAT for "Send now"). Super admin only.
+    match /appConfig/{docId} {
+      allow read, write: if isSuper();
+    }
+  }
+}
