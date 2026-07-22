@@ -9,17 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SuperRouteImport } from './routes/super'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppHistoryRouteImport } from './routes/app.history'
-import { Route as AppChecklistRouteImport } from './routes/app.checklist'
-import { Route as AdminEmployeesRouteImport } from './routes/admin.employees'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as SuperRouteImport } from './routes/super'
 import { Route as AdminChecklistRouteImport } from './routes/admin.checklist'
+import { Route as AdminEmployeesRouteImport } from './routes/admin.employees'
+import { Route as AppChecklistRouteImport } from './routes/app.checklist'
+import { Route as AppHistoryRouteImport } from './routes/app.history'
 
-const SuperRoute = SuperRouteImport.update({
-  id: '/super',
-  path: '/super',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -27,19 +27,14 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const SuperRoute = SuperRouteImport.update({
+  id: '/super',
+  path: '/super',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppHistoryRoute = AppHistoryRouteImport.update({
-  id: '/app/history',
-  path: '/app/history',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppChecklistRoute = AppChecklistRouteImport.update({
-  id: '/app/checklist',
-  path: '/app/checklist',
+const AdminChecklistRoute = AdminChecklistRouteImport.update({
+  id: '/admin/checklist',
+  path: '/admin/checklist',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminEmployeesRoute = AdminEmployeesRouteImport.update({
@@ -47,9 +42,14 @@ const AdminEmployeesRoute = AdminEmployeesRouteImport.update({
   path: '/admin/employees',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminChecklistRoute = AdminChecklistRouteImport.update({
-  id: '/admin/checklist',
-  path: '/admin/checklist',
+const AppChecklistRoute = AppChecklistRouteImport.update({
+  id: '/app/checklist',
+  path: '/app/checklist',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppHistoryRoute = AppHistoryRouteImport.update({
+  id: '/app/history',
+  path: '/app/history',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -123,11 +123,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/super': {
-      id: '/super'
-      path: '/super'
-      fullPath: '/super'
-      preLoaderRoute: typeof SuperRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -137,25 +137,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/super': {
+      id: '/super'
+      path: '/super'
+      fullPath: '/super'
+      preLoaderRoute: typeof SuperRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/app/history': {
-      id: '/app/history'
-      path: '/app/history'
-      fullPath: '/app/history'
-      preLoaderRoute: typeof AppHistoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/app/checklist': {
-      id: '/app/checklist'
-      path: '/app/checklist'
-      fullPath: '/app/checklist'
-      preLoaderRoute: typeof AppChecklistRouteImport
+    '/admin/checklist': {
+      id: '/admin/checklist'
+      path: '/admin/checklist'
+      fullPath: '/admin/checklist'
+      preLoaderRoute: typeof AdminChecklistRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/employees': {
@@ -165,11 +158,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminEmployeesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/checklist': {
-      id: '/admin/checklist'
-      path: '/admin/checklist'
-      fullPath: '/admin/checklist'
-      preLoaderRoute: typeof AdminChecklistRouteImport
+    '/app/checklist': {
+      id: '/app/checklist'
+      path: '/app/checklist'
+      fullPath: '/app/checklist'
+      preLoaderRoute: typeof AppChecklistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app/history': {
+      id: '/app/history'
+      path: '/app/history'
+      fullPath: '/app/history'
+      preLoaderRoute: typeof AppHistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -187,3 +187,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
