@@ -1,7 +1,9 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { LogOut, ClipboardList, History, LayoutDashboard, Shield, Users } from "lucide-react";
+import tvseLogo from "@/assets/tvse-logo.svg";
 import type { ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -10,28 +12,36 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 h-14">
-          <Link to="/" className="font-semibold text-lg bg-clip-text text-transparent" style={{ backgroundImage: "var(--gradient-primary)" }}>
-            Branch IT Checklist
+      <header className="sticky top-0 z-30 border-b border-border bg-card/95 shadow-soft backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <Link to="/" className="flex items-center gap-3">
+            <img src={tvseLogo} alt="TVSE Electronics" className="h-10 w-auto" />
+            <div className="flex flex-col">
+              <span className="text-xs uppercase tracking-[0.35em] text-muted-foreground">TVS Electronics</span>
+              <span className="text-base font-semibold tracking-wide text-primary md:text-xl">Branch IT Checklist</span>
+            </div>
           </Link>
-          <nav className="flex items-center gap-1">
+          <nav className="flex flex-wrap items-center gap-2">
+            <span className="hidden rounded-full border border-border bg-muted/60 px-3 py-1 text-[11px] uppercase tracking-[0.25em] text-muted-foreground sm:inline">
+              {profile?.role ?? "Guest"}
+            </span>
             {profile?.role === "employee" && (
               <>
-                <Link to="/app/checklist"><Button variant="ghost" size="sm"><ClipboardList className="h-4 w-4 mr-1" />Checklist</Button></Link>
-                <Link to="/app/history"><Button variant="ghost" size="sm"><History className="h-4 w-4 mr-1" />History</Button></Link>
+                <Link to="/app/checklist"><Button variant="ghost" size="sm"><ClipboardList className="mr-1 h-4 w-4" />Checklist</Button></Link>
+                <Link to="/app/history"><Button variant="ghost" size="sm"><History className="mr-1 h-4 w-4" />History</Button></Link>
               </>
             )}
             {(profile?.role === "admin" || profile?.role === "superadmin") && (
               <>
-                <Link to="/admin/checklist"><Button variant="ghost" size="sm"><LayoutDashboard className="h-4 w-4 mr-1" />Dashboard</Button></Link>
-                <Link to="/admin/employees"><Button variant="ghost" size="sm"><Users className="h-4 w-4 mr-1" />Employees</Button></Link>
+                <Link to="/admin/checklist"><Button variant="ghost" size="sm"><LayoutDashboard className="mr-1 h-4 w-4" />Dashboard</Button></Link>
+                <Link to="/admin/employees"><Button variant="ghost" size="sm"><Users className="mr-1 h-4 w-4" />Employees</Button></Link>
               </>
             )}
             {profile?.role === "superadmin" && (
-              <Link to="/super"><Button variant="ghost" size="sm"><Shield className="h-4 w-4 mr-1" />Super Admin</Button></Link>
+              <Link to="/super"><Button variant="ghost" size="sm"><Shield className="mr-1 h-4 w-4" />Super Admin</Button></Link>
             )}
-            <span className="hidden sm:inline text-sm text-muted-foreground ml-2">{profile?.name}</span>
+            <ThemeToggle />
+            <span className="ml-2 hidden text-sm text-muted-foreground sm:inline">{profile?.name ?? "User"}</span>
             <Button
               variant="ghost"
               size="sm"
@@ -45,7 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto p-4 sm:p-6">{children}</main>
+      <main className="mx-auto max-w-7xl p-4 sm:p-6">{children}</main>
     </div>
   );
 }

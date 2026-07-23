@@ -9,9 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { toast } from "sonner";
-import { Loader2, Shield, UserCog, User } from "lucide-react";
+import { Eye, EyeOff, Loader2, Shield, UserCog, User } from "lucide-react";
 import { motion } from "framer-motion";
+import tvseLogo from "@/assets/tvse-logo.svg";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -20,6 +22,9 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [showSaPassword, setShowSaPassword] = useState(false);
+  const [showAPassword, setShowAPassword] = useState(false);
+  const [showEPassword, setShowEPassword] = useState(false);
 
   // super
   const [saEmail, setSaEmail] = useState("");
@@ -52,7 +57,7 @@ function LoginPage() {
       await auth.signOut();
       throw new Error("Location does not match this employee.");
     }
-    toast.success(`Welcome, ${p.name}`);
+    toast.success(`Welcome, ${p.name || p.email || "User"}`);
     if (p.role === "superadmin") navigate({ to: "/super" });
     else if (p.role === "admin") navigate({ to: "/admin/checklist" });
     else navigate({ to: "/app/checklist" });
@@ -104,17 +109,27 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--gradient-primary)" }}>
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-10%] top-10 h-72 w-72 rounded-full bg-sky-500/20 blur-3xl" />
+        <div className="absolute right-[-10%] bottom-16 h-80 w-80 rounded-full bg-blue-400/15 blur-3xl" />
+      </div>
+      <div className="absolute top-4 right-4 z-20">
+        <ThemeToggle showLabel variant="secondary" />
+      </div>
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 32 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
+        transition={{ duration: 0.45, ease: "easeOut" }}
+        className="relative w-full max-w-md"
       >
-        <Card className="shadow-2xl border-0">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Branch IT Daily Checklist</CardTitle>
-            <CardDescription>Sign in to continue</CardDescription>
+        <Card className="hero-card border-0 overflow-hidden">
+          <CardHeader className="text-center space-y-4">
+            <img src={tvseLogo} alt="TVS Electronics logo" className="mx-auto h-16 w-auto" />
+            <div>
+              <CardTitle className="text-2xl">Branch IT Daily Checklist</CardTitle>
+              <CardDescription>TVS Electronics employee checklist portal</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="employee" className="w-full">
@@ -132,7 +147,17 @@ function LoginPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Password</Label>
-                    <Input type="password" value={ePass} onChange={(e) => setEPass(e.target.value)} required />
+                    <div className="relative">
+                      <Input type={showEPassword ? "text" : "password"} value={ePass} onChange={(e) => setEPass(e.target.value)} required />
+                      <button
+                        type="button"
+                        onClick={() => setShowEPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label={showEPassword ? "Hide password" : "Show password"}
+                      >
+                        {showEPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Sign In
@@ -148,7 +173,17 @@ function LoginPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Password</Label>
-                    <Input type="password" value={aPass} onChange={(e) => setAPass(e.target.value)} required />
+                    <div className="relative">
+                      <Input type={showAPassword ? "text" : "password"} value={aPass} onChange={(e) => setAPass(e.target.value)} required />
+                      <button
+                        type="button"
+                        onClick={() => setShowAPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label={showAPassword ? "Hide password" : "Show password"}
+                      >
+                        {showAPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Sign In
@@ -164,7 +199,17 @@ function LoginPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Password</Label>
-                    <Input type="password" value={saPass} onChange={(e) => setSaPass(e.target.value)} required />
+                    <div className="relative">
+                      <Input type={showSaPassword ? "text" : "password"} value={saPass} onChange={(e) => setSaPass(e.target.value)} required />
+                      <button
+                        type="button"
+                        onClick={() => setShowSaPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label={showSaPassword ? "Hide password" : "Show password"}
+                      >
+                        {showSaPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Sign In

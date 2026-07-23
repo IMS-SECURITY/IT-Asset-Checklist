@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, UserPlus, UserMinus, Download, ShieldPlus, Mail, MailX } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { motion } from "framer-motion";
 
 import { toast } from "sonner";
 import { createAppUser } from "@/lib/user-admin";
@@ -68,9 +69,9 @@ function SuperPanel() {
   };
 
   return (
-    <div className="space-y-6">
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold">Super Admin Panel</h1>
+        <h1 className="page-title">Super Admin Panel</h1>
         <Button onClick={exportAll}><Download className="h-4 w-4 mr-1" />Export All</Button>
       </div>
 
@@ -89,7 +90,7 @@ function SuperPanel() {
       <EmployeesView employees={employees} />
       <EmailRecipientsSection projects={projects} />
       <SendNowSection />
-    </div>
+    </motion.div>
   );
 }
 

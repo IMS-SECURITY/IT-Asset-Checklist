@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserPlus, Trash2, KeyRound, Pencil } from "lucide-react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { createAppUser, sendResetEmail, nameKey } from "@/lib/user-admin";
 
@@ -78,11 +79,11 @@ function AdminEmployees() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="space-y-6">
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold">Employees</h1>
-          <p className="text-sm text-muted-foreground">Manage employees in your projects</p>
+          <h1 className="page-title">Employees</h1>
+          <p className="section-label text-sm">Manage employees in your projects</p>
         </div>
         <CreateEmployeeDialog projects={projects} onCreated={load} />
       </div>
@@ -109,7 +110,7 @@ function AdminEmployees() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </motion.div>
   );
 }
 

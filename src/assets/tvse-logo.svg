@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 170" role="img" aria-labelledby="tvs-title tvs-desc">
+  <title id="tvs-title">TVS Electronics</title>
+  <desc id="tvs-desc">Official Logo of TVS Electronics</desc>
+  <defs>
+    <style>
+      .logo-tvse {
+        font-family: "Arial Black", -apple-system, sans-serif;
+        font-weight: 900;
+        fill: #229be3;
+        text-anchor: middle;
+      }
+      .logo-desc {
+        font-family: "Arial Black", -apple-system, sans-serif;
+        font-weight: 900;
+        fill: #229be3;
+        text-anchor: middle;
+      }
+    </style>
+  </defs>
+  <g transform="translate(250, 85) skewX(-12) translate(-250, -85)">
+    <text x="250" y="92" font-size="120" class="logo-tvse" letter-spacing="-3px">TVSE</text>
+    <text x="250" y="138" font-size="30" class="logo-desc" letter-spacing="-0.5px">TVS ELECTRONICS</text>
+  </g>
+</svg>
