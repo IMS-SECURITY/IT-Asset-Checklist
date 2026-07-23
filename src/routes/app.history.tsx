@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format, subDays } from "date-fns";
 import { Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 
 export const Route = createFileRoute("/app/history")({
   component: () => (
@@ -45,8 +46,8 @@ function History() {
   }, [user]);
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">My Submissions (Last 30 Days)</h1>
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      <h1 className="page-title">My Submissions (Last 30 Days)</h1>
       {loading ? (
         <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
       ) : rows.length === 0 ? (
@@ -74,7 +75,7 @@ function History() {
           ))}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 

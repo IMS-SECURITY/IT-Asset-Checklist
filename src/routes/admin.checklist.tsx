@@ -204,8 +204,8 @@ function AdminDashboard() {
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap gap-3 items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-          <p className="text-sm text-muted-foreground">{profile?.role === "superadmin" ? "All projects" : `${projects.length} project(s)`}</p>
+          <h1 className="page-title">Admin Dashboard</h1>
+          <p className="section-label text-sm">{profile?.role === "superadmin" ? "All projects" : `${projects.length} project(s)`}</p>
         </div>
         <div className="flex flex-wrap gap-2 items-end">
           <div>

@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import { onAuthStateChanged, signOut as fbSignOut, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { auth, db } from "./firebase";
 import type { UserProfile } from "./types";
 
@@ -20,7 +22,10 @@ const Ctx = createContext<AuthCtx>({
   refreshProfile: async () => {},
 });
 
+const PUBLIC_ROUTES = new Set(["/login"]);
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,11 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
-      await loadProfile(u);
-      setLoading(false);
+      try {
+        await loadProfile(u);
+      } catch (error) {
+        console.error("Failed to load profile:", error);
+        setProfile(null);
+      } finally {
+        setLoading(false);
+      }
     });
     return () => unsub();
   }, []);
+
+  if (loading && !PUBLIC_ROUTES.has(pathname)) {
+    return <LoadingScreen />;
+  }
 
   return (
     <Ctx.Provider

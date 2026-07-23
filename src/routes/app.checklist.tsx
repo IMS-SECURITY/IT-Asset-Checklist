@@ -146,10 +146,10 @@ function ChecklistForm() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="max-w-2xl mx-auto space-y-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-2xl font-bold">Daily Checklist</h1>
-        <p className="text-muted-foreground text-sm">Complete each section in order.</p>
+        <h1 className="page-title">Daily Checklist</h1>
+        <p className="section-label text-sm">Complete each section in order.</p>
       </motion.div>
 
       <Card>
