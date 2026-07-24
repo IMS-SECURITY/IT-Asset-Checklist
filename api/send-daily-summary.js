@@ -1,6 +1,8 @@
 export default async function handler(req, res) {
   try {
-    await import("../scripts/send-daily-summary.mjs");
+    const { run } = await import("../scripts/send-daily-summary.mjs");
+
+    await run();
 
     return res.status(200).json({
       success: true,
@@ -12,7 +14,8 @@ export default async function handler(req, res) {
 
     return res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 }
