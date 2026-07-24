@@ -762,24 +762,43 @@ b.branch||""
 
 
 
-await transporter.sendMail({
+console.log("========================================");
+console.log("Project:", project.name);
+console.log("Recipients:", recipients);
+console.log("Recipient Count:", recipients.length);
+console.log("========================================");
 
-from:MAIL_FROM,
+try {
 
-to:recipients.join(","),
+  const info = await transporter.sendMail({
 
-subject:
-`Daily IT Checklist Summary — ${project.name} — ${dateStr}`,
+    from: MAIL_FROM,
 
-html
+    to: recipients.join(","),
 
-});
+    subject: `Daily IT Checklist Summary — ${project.name} — ${dateStr}`,
 
+    html
 
+  });
 
-console.log(
-`Mail sent for ${project.name}`
-);
+  console.log("========== BREVO RESPONSE ==========");
+  console.log("Message ID:", info.messageId);
+  console.log("Accepted:", info.accepted);
+  console.log("Rejected:", info.rejected);
+  console.log("Pending:", info.pending);
+  console.log("Envelope:", info.envelope);
+  console.log("Response:", info.response);
+  console.log("====================================");
+
+  console.log(`Mail sent for ${project.name}`);
+
+} catch (err) {
+
+  console.error("EMAIL SEND FAILED");
+  console.error(err);
+
+}
 
 
 }
