@@ -6,6 +6,7 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { AuthProvider } from "@/lib/auth-context";
@@ -41,13 +42,14 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error("Global Error:", error.message);
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
+  const err = error instanceof Error ? error : new Error(String(error));
+  console.error("Global Error:", err.message);
   const router = useRouter();
 
   useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
+    reportLovableError(err, { boundary: "tanstack_root_error_component" });
+  }, [err]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">

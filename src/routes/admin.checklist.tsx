@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { motion } from "framer-motion";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subDays } from "date-fns";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Legend, CartesianGrid,
 } from "recharts";
@@ -497,7 +497,11 @@ function StatusBadge({ v, hasProblem }: { v: string; hasProblem?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1">
       <Badge className={cls}>{v}</Badge>
-      {hasProblem && <AlertTriangle className="h-3 w-3 text-destructive inline" title="Issue reported" />}
+      {hasProblem && (
+        <span title="Issue reported" className="inline-flex">
+          <AlertTriangle className="h-3 w-3 text-destructive inline" />
+        </span>
+      )}
     </span>
   );
 }

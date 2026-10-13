@@ -333,7 +333,7 @@ export function EditUserRoleDialog({
         projectId: role === "superadmin" ? "" : projectId,
         projectName: role === "superadmin" ? "" : projectName,
         adminProjects: role === "admin" ? adminProjects : [],
-        branches: role === "employee" ? branches.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        branches: role === "employee" ? branches.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
       });
       toast.success(`Role and profile for "${name}" updated to ${role}`);
       setOpen(false);
