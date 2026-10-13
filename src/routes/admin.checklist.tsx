@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { RequireRole } from "@/components/RequireRole";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { motion } from "framer-motion";
-import { format, parseISO, subDays } from "date-fns";
+import { format, parseISO, subDays, addDays, differenceInCalendarDays } from "date-fns";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Legend, CartesianGrid,
 } from "recharts";
@@ -82,7 +82,7 @@ function AdminDashboard() {
       const projSnap = await getDocs(collection(db, "projects"));
       let projs = projSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
       if (myProjects && myProjects.length > 0) {
-        projs = projs.filter((p) => myProjects.includes(p.id));
+        projs = projs.filter((p) => myProjects.includes(p.id) || myProjects.includes(p.name));
       }
       setProjects(projs);
 
@@ -92,56 +92,103 @@ function AdminDashboard() {
       const empSnap = await getDocs(collection(db, "employees"));
       const emps = empSnap.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        .filter((e) => e.role === "employee" && (projIdsInScope.length === 0 || projIdsInScope.includes(e.projectId)));
+        .filter((e) => e.role === "employee" && (
+          projIdsInScope.length === 0 ||
+          projIdsInScope.includes(e.projectId) ||
+          projs.some((p) => p.name?.trim().toLowerCase() === e.projectName?.trim().toLowerCase())
+        ));
       setEmployees(emps);
 
       // 3. Load submissions in date range, scoped to projects
       const subsAll: any[] = [];
+      const seenDocIds = new Set<string>();
+
+      const empUidsInScope = new Set(emps.map((e) => e.id));
+      const empIdsInScope = new Set(emps.map((e) => e.employeeID).filter(Boolean));
+      const empNamesInScope = new Set(emps.map((e) => e.name?.trim().toLowerCase()).filter(Boolean));
+
+      const isDocInScope = (data: any) => {
+        if (profile?.role === "superadmin" && projectFilter === "all") return true;
+        if (data.uid && empUidsInScope.has(data.uid)) return true;
+        if (data.employeeID && empIdsInScope.has(data.employeeID)) return true;
+        if (data.employeeName && empNamesInScope.has(data.employeeName?.trim().toLowerCase())) return true;
+        if (data.projectId && projIdsInScope.includes(data.projectId)) return true;
+        if (data.projectName && projs.some((p) => p.name?.trim().toLowerCase() === data.projectName?.trim().toLowerCase() || p.id === data.projectId)) return true;
+        return false;
+      };
+
+      const isDocInDate = (data: any) => {
+        return (!fromDate || data.date >= fromDate) && (!toDate || data.date <= toDate);
+      };
+
+      const addSubmission = (id: string, data: any) => {
+        if (seenDocIds.has(id)) return;
+        if (isDocInScope(data) && isDocInDate(data)) {
+          seenDocIds.add(id);
+          subsAll.push({ id, ...data });
+        }
+      };
+
+      // Strategy A: Collection-wide read
       try {
         const subSnap = await getDocs(collection(db, "checklists"));
-        subSnap.forEach((d) => {
-          const data: any = d.data();
-          const inScope =
-            projIdsInScope.length === 0 ||
-            projIdsInScope.includes(data.projectId) ||
-            (data.projectName && projs.some((p) => p.name === data.projectName || p.id === data.projectId));
-
-          const inDate =
-            (!fromDate || data.date >= fromDate) &&
-            (!toDate || data.date <= toDate);
-
-          if (inScope && inDate) {
-            subsAll.push({ id: d.id, ...data });
-          }
-        });
+        subSnap.forEach((d) => addSubmission(d.id, d.data()));
       } catch (colErr: any) {
-        // Fallback for query if collection-wide read is denied
-        if (projIdsInScope.length > 0) {
-          const chunks: string[][] = [];
-          for (let i = 0; i < projIdsInScope.length; i += 30) {
-            chunks.push(projIdsInScope.slice(i, i + 30));
+        console.warn("Collection-wide read not available, falling back to targeted queries:", colErr);
+        // Strategy B: query by projectId for each project in scope
+        for (const pid of projIdsInScope) {
+          try {
+            const qs = query(collection(db, "checklists"), where("projectId", "==", pid));
+            const snap = await getDocs(qs);
+            snap.forEach((d) => addSubmission(d.id, d.data()));
+          } catch (e) {
+            console.warn(`Query for projectId ${pid} failed:`, e);
           }
-          for (const chunk of chunks) {
-            try {
-              const qs = query(
-                collection(db, "checklists"),
-                where("projectId", "in", chunk)
-              );
-              const chunkSnap = await getDocs(qs);
-              chunkSnap.forEach((d) => {
-                const data: any = d.data();
-                if ((!fromDate || data.date >= fromDate) && (!toDate || data.date <= toDate)) {
-                  subsAll.push({ id: d.id, ...data });
-                }
-              });
-            } catch (chunkErr) {
-              console.warn("Chunk query error:", chunkErr);
+        }
+
+        // Strategy C: query by employee UID in chunks (up to 30)
+        const empUidsList = Array.from(empUidsInScope);
+        for (let i = 0; i < empUidsList.length; i += 30) {
+          const chunk = empUidsList.slice(i, i + 30);
+          try {
+            const qs = query(collection(db, "checklists"), where("uid", "in", chunk));
+            const snap = await getDocs(qs);
+            snap.forEach((d) => addSubmission(d.id, d.data()));
+          } catch (e) {
+            console.warn("Query for employee uids failed:", e);
+          }
+        }
+      }
+
+      // Strategy D: Direct getDoc lookups for scoped employees for the date range
+      // Checklist document IDs are strictly `${emp.id}_${date}`
+      try {
+        const start = parseISO(fromDate);
+        const end = parseISO(toDate);
+        const daysDiff = differenceInCalendarDays(end, start);
+        if (daysDiff >= 0 && daysDiff <= 31 && emps.length > 0) {
+          const directChecks: Promise<void>[] = [];
+          for (let d = 0; d <= daysDiff; d++) {
+            const dt = format(addDays(start, d), "yyyy-MM-dd");
+            for (const emp of emps) {
+              const docId = `${emp.id}_${dt}`;
+              if (!seenDocIds.has(docId)) {
+                directChecks.push(
+                  getDoc(doc(db, "checklists", docId))
+                    .then((snap) => {
+                      if (snap.exists()) {
+                        addSubmission(snap.id, snap.data());
+                      }
+                    })
+                    .catch(() => {})
+                );
+              }
             }
           }
+          await Promise.all(directChecks);
         }
-        if (subsAll.length === 0 && colErr?.message) {
-          toast.error(colErr?.message || "Failed to load dashboard submissions");
-        }
+      } catch (directErr) {
+        console.warn("Direct doc lookups error:", directErr);
       }
 
       setSubmissions(subsAll);
@@ -166,8 +213,16 @@ function AdminDashboard() {
   }, [load]);
 
   const todaySubs = submissions.filter((s) => s.date === today);
-  const submittedTodayUids = new Set(todaySubs.map((s) => s.uid));
-  const notSubmittedToday = employees.filter((e) => !submittedTodayUids.has(e.id));
+  const submittedTodayUids = new Set(todaySubs.map((s) => s.uid).filter(Boolean));
+  const submittedTodayEmpIds = new Set(todaySubs.map((s) => s.employeeID).filter(Boolean));
+  const submittedTodayNames = new Set(todaySubs.map((s) => s.employeeName?.trim().toLowerCase()).filter(Boolean));
+
+  const notSubmittedToday = employees.filter((e) => {
+    if (submittedTodayUids.has(e.id)) return false;
+    if (e.employeeID && submittedTodayEmpIds.has(e.employeeID)) return false;
+    if (e.name && submittedTodayNames.has(e.name.trim().toLowerCase())) return false;
+    return true;
+  });
 
   const counts = useMemo(() => {
     const c = {
