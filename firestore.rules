@@ -7,7 +7,10 @@ service cloud.firestore {
     function isSuper() { return isSignedIn() && myProfile().role == 'superadmin'; }
     function isAdmin() { return isSignedIn() && myProfile().role == 'admin'; }
     function isAdminOf(projectId) {
-      return isAdmin() && projectId in myProfile().adminProjects;
+      return isAdmin() && (
+        ('adminProjects' in myProfile() && projectId in myProfile().adminProjects) ||
+        ('projectId' in myProfile() && myProfile().projectId == projectId)
+      );
     }
 
     match /projects/{projectId} {
@@ -33,12 +36,13 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource.data.uid == request.auth.uid ||
         isSuper() ||
+        isAdmin() ||
         isAdminOf(resource.data.projectId)
       );
       allow create: if isSignedIn() &&
         request.resource.data.uid == request.auth.uid &&
         docId == request.auth.uid + '_' + request.resource.data.date;
-      allow update, delete: if isSuper() || isAdminOf(resource.data.projectId);
+      allow update, delete: if isSuper() || isAdmin();
     }
 
     // Extra recipients for the daily summary email, managed by super admin.

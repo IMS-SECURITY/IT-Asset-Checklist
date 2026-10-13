@@ -34,10 +34,17 @@ function AdminEmployees() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const myProjectIds = useMemo(
-    () => (profile?.role === "superadmin" ? null : profile?.adminProjects ?? []),
-    [profile],
-  );
+  const myProjectIds = useMemo(() => {
+    if (profile?.role === "superadmin") return null;
+    const list = new Set<string>();
+    if (Array.isArray(profile?.adminProjects) && profile.adminProjects.length > 0) {
+      profile.adminProjects.filter(Boolean).forEach((p) => list.add(p));
+    }
+    if (profile?.projectId) {
+      list.add(profile.projectId);
+    }
+    return list.size > 0 ? Array.from(list) : null;
+  }, [profile]);
 
   const load = useCallback(async () => {
     setLoading(true);

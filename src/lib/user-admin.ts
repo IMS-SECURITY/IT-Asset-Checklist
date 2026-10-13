@@ -87,3 +87,62 @@ export async function createAppUser(input: CreateUserInput): Promise<string> {
 export async function sendResetEmail(email: string) {
   await sendPasswordResetEmail(auth, email.trim().toLowerCase());
 }
+
+export interface UpdateUserRoleInput {
+  uid: string;
+  name: string;
+  email: string;
+  employeeID: string;
+  location: string;
+  role: Role;
+  projectId?: string;
+  projectName?: string;
+  adminProjects?: string[];
+  branches?: string[];
+}
+
+/**
+ * Updates a user's role and associated profile metadata.
+ * Ensures employeeLogins lookup is maintained if the user is an employee.
+ */
+export async function updateUserRole(input: UpdateUserRoleInput): Promise<void> {
+  const ref = doc(db, "employees", input.uid);
+  const data: any = {
+    name: input.name.trim(),
+    employeeID: input.employeeID.trim(),
+    email: input.email.trim().toLowerCase(),
+    location: input.location.trim(),
+    role: input.role,
+    updatedAt: serverTimestamp(),
+  };
+
+  if (input.role === "superadmin") {
+    data.projectId = "";
+    data.projectName = "";
+    data.adminProjects = [];
+    data.branches = [];
+  } else if (input.role === "admin") {
+    data.projectId = input.projectId || "";
+    data.projectName = input.projectName || "";
+    data.adminProjects = input.adminProjects ?? (input.projectId ? [input.projectId] : []);
+    data.branches = [];
+  } else if (input.role === "employee") {
+    data.projectId = input.projectId || "";
+    data.projectName = input.projectName || "";
+    data.adminProjects = [];
+    data.branches = input.branches ?? [];
+
+    // Ensure public name lookup exists for employee login
+    await setDoc(
+      doc(db, "employeeLogins", nameKey(input.name)),
+      {
+        email: input.email.trim().toLowerCase(),
+        uid: input.uid,
+        name: input.name.trim(),
+      },
+      { merge: true },
+    );
+  }
+
+  await setDoc(ref, data, { merge: true });
+}

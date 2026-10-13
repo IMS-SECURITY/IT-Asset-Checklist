@@ -16,7 +16,8 @@ import { format, parseISO } from "date-fns";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Legend, CartesianGrid,
 } from "recharts";
-import { RefreshCw, Download, Wifi, Cable, Printer, Monitor, Droplet, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RefreshCw, Download, Wifi, Cable, Printer, Monitor, Droplet, AlertTriangle, CheckCircle2, XCircle, Eye, Clock } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 
@@ -52,7 +53,17 @@ function AdminDashboard() {
   const { profile } = useAuth();
   const today = format(new Date(), "yyyy-MM-dd");
 
-  const myProjects = profile?.role === "superadmin" ? null : profile?.adminProjects || [];
+  const myProjects = useMemo(() => {
+    if (profile?.role === "superadmin") return null;
+    const list = new Set<string>();
+    if (Array.isArray(profile?.adminProjects) && profile.adminProjects.length > 0) {
+      profile.adminProjects.filter(Boolean).forEach((p) => list.add(p));
+    }
+    if (profile?.projectId) {
+      list.add(profile.projectId);
+    }
+    return list.size > 0 ? Array.from(list) : null;
+  }, [profile]);
 
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -61,56 +72,86 @@ function AdminDashboard() {
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
   const [loading, setLoading] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<string>("");
+  const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // projects
+      // 1. Load projects
       const projSnap = await getDocs(collection(db, "projects"));
       let projs = projSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      if (myProjects) projs = projs.filter((p) => myProjects.includes(p.id));
+      if (myProjects && myProjects.length > 0) {
+        projs = projs.filter((p) => myProjects.includes(p.id));
+      }
       setProjects(projs);
 
       const projIdsInScope = projectFilter === "all" ? projs.map((p) => p.id) : [projectFilter];
 
-      // employees in scope
+      // 2. Load employees in scope
       const empSnap = await getDocs(collection(db, "employees"));
       const emps = empSnap.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        .filter((e) => e.role === "employee" && projIdsInScope.includes(e.projectId));
+        .filter((e) => e.role === "employee" && (projIdsInScope.length === 0 || projIdsInScope.includes(e.projectId)));
       setEmployees(emps);
 
-      // submissions in date range, scoped to projects the user can read
+      // 3. Load submissions in date range, scoped to projects
       const subsAll: any[] = [];
-      if (projIdsInScope.length > 0) {
-        // Firestore 'in' supports up to 30 values; chunk if needed
-        const chunks: string[][] = [];
-        for (let i = 0; i < projIdsInScope.length; i += 30) {
-          chunks.push(projIdsInScope.slice(i, i + 30));
-        }
-        for (const chunk of chunks) {
-          // Only filter by projectId server-side to avoid composite index requirement.
-          // Date range is applied client-side below.
-          const qs = query(
-            collection(db, "checklists"),
-            where("projectId", "in", chunk)
-          );
-          const subSnap = await getDocs(qs);
-          subSnap.forEach((d) => {
-            const data: any = d.data();
-            if (data.date >= fromDate && data.date <= toDate) {
-              subsAll.push({ id: d.id, ...data });
+      try {
+        const subSnap = await getDocs(collection(db, "checklists"));
+        subSnap.forEach((d) => {
+          const data: any = d.data();
+          const inScope =
+            projIdsInScope.length === 0 ||
+            projIdsInScope.includes(data.projectId) ||
+            (data.projectName && projs.some((p) => p.name === data.projectName || p.id === data.projectId));
+
+          const inDate =
+            (!fromDate || data.date >= fromDate) &&
+            (!toDate || data.date <= toDate);
+
+          if (inScope && inDate) {
+            subsAll.push({ id: d.id, ...data });
+          }
+        });
+      } catch (colErr: any) {
+        // Fallback for query if collection-wide read is denied
+        if (projIdsInScope.length > 0) {
+          const chunks: string[][] = [];
+          for (let i = 0; i < projIdsInScope.length; i += 30) {
+            chunks.push(projIdsInScope.slice(i, i + 30));
+          }
+          for (const chunk of chunks) {
+            try {
+              const qs = query(
+                collection(db, "checklists"),
+                where("projectId", "in", chunk)
+              );
+              const chunkSnap = await getDocs(qs);
+              chunkSnap.forEach((d) => {
+                const data: any = d.data();
+                if ((!fromDate || data.date >= fromDate) && (!toDate || data.date <= toDate)) {
+                  subsAll.push({ id: d.id, ...data });
+                }
+              });
+            } catch (chunkErr) {
+              console.warn("Chunk query error:", chunkErr);
             }
-          });
+          }
+        }
+        if (subsAll.length === 0 && colErr?.message) {
+          toast.error(colErr?.message || "Failed to load dashboard submissions");
         }
       }
+
       setSubmissions(subsAll);
+      setLastRefreshed(format(new Date(), "HH:mm:ss"));
     } catch (err: any) {
       toast.error(err?.message || "Failed to load dashboard");
     } finally {
       setLoading(false);
     }
-  }, [projectFilter, fromDate, toDate, profile]);
+  }, [projectFilter, fromDate, toDate, myProjects]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -126,7 +167,7 @@ function AdminDashboard() {
 
   const todaySubs = submissions.filter((s) => s.date === today);
   const submittedTodayUids = new Set(todaySubs.map((s) => s.uid));
-  const notSubmittedToday = employees.filter((e) => (e.branches?.length || 0) > 0 && !submittedTodayUids.has(e.id));
+  const notSubmittedToday = employees.filter((e) => !submittedTodayUids.has(e.id));
 
   const counts = useMemo(() => {
     const c = {
@@ -220,18 +261,42 @@ function AdminDashboard() {
           </div>
           <div>
             <div className="text-xs text-muted-foreground mb-1">From</div>
-            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-40" />
+            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-36" />
           </div>
           <div>
             <div className="text-xs text-muted-foreground mb-1">To</div>
-            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-40" />
+            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-36" />
           </div>
-          <Button variant="outline" onClick={load} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />Refresh
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant={fromDate === today && toDate === today ? "default" : "outline"}
+              onClick={() => { setFromDate(today); setToDate(today); }}
+            >
+              Today
+            </Button>
+            <Button
+              size="sm"
+              variant={fromDate === format(subDays(new Date(), 7), "yyyy-MM-dd") ? "default" : "outline"}
+              onClick={() => { setFromDate(format(subDays(new Date(), 7), "yyyy-MM-dd")); setToDate(today); }}
+            >
+              7 Days
+            </Button>
+          </div>
+          <Button variant="outline" onClick={load} disabled={loading} title={lastRefreshed ? `Last updated: ${lastRefreshed}` : undefined}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
+            Refresh
           </Button>
           <Button onClick={exportXlsx}><Download className="h-4 w-4 mr-1" />Export</Button>
         </div>
       </motion.div>
+
+      {lastRefreshed && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground -mt-3">
+          <Clock className="h-3.5 w-3.5 text-primary" />
+          <span>Last synchronized: <strong>{lastRefreshed}</strong></span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <Kpi label="Submitted Today" value={counts.submittedToday} icon={<CheckCircle2 className="h-4 w-4" />} tone="success" />
@@ -278,11 +343,11 @@ function AdminDashboard() {
                 <TableBody>
                   {notSubmittedToday.map((e) => (
                     <TableRow key={e.id}>
-                      <TableCell>{e.name}</TableCell>
+                      <TableCell className="font-medium">{e.name}</TableCell>
                       <TableCell>{e.employeeID}</TableCell>
                       <TableCell>{e.projectName}</TableCell>
                       <TableCell>{e.location}</TableCell>
-                      <TableCell>{(e.branches || []).join(", ")}</TableCell>
+                      <TableCell>{(e.branches && e.branches.length > 0) ? e.branches.join(", ") : <span className="text-muted-foreground italic text-xs">None assigned</span>}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -300,38 +365,141 @@ function AdminDashboard() {
               <TableHeader><TableRow>
                 <TableHead>Date</TableHead><TableHead>Employee</TableHead><TableHead>ID</TableHead><TableHead>Project</TableHead><TableHead>Branch</TableHead>
                 <TableHead>WiFi</TableHead><TableHead>LAN</TableHead><TableHead>Printer</TableHead><TableHead>Toner</TableHead><TableHead>VCON</TableHead><TableHead>Time</TableHead>
+                <TableHead className="text-right">Details</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {submissions.sort((a, b) => (a.date < b.date ? 1 : -1)).map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell>{s.date}</TableCell>
-                    <TableCell>{s.employeeName}</TableCell>
-                    <TableCell>{s.employeeID}</TableCell>
-                    <TableCell>{s.projectName}</TableCell>
-                    <TableCell>{s.branch}</TableCell>
-                    <TableCell><StatusBadge v={s.wifi} /></TableCell>
-                    <TableCell><StatusBadge v={s.lan} /></TableCell>
-                    <TableCell><StatusBadge v={s.printer} /></TableCell>
-                    <TableCell>{s.tonerAvailable === "Yes" ? `${s.tonerStatus}%` : "No"}</TableCell>
-                    <TableCell><StatusBadge v={s.vcon} /></TableCell>
-                    <TableCell className="text-xs">{s.submittedAt?.toDate ? format(s.submittedAt.toDate(), "HH:mm") : ""}</TableCell>
-                  </TableRow>
-                ))}
+                {submissions.length === 0 ? (
+                  <TableRow><TableCell colSpan={12} className="text-center text-sm text-muted-foreground py-6">No submissions found for the selected filter and dates</TableCell></TableRow>
+                ) : (
+                  submissions.sort((a, b) => (a.date < b.date ? 1 : -1)).map((s) => (
+                    <TableRow key={s.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => setSelectedSubmission(s)}>
+                      <TableCell className="font-medium">{s.date}</TableCell>
+                      <TableCell>{s.employeeName}</TableCell>
+                      <TableCell className="text-xs">{s.employeeID}</TableCell>
+                      <TableCell>{s.projectName}</TableCell>
+                      <TableCell>{s.branch}</TableCell>
+                      <TableCell><StatusBadge v={s.wifi} hasProblem={Boolean(s.wifiProblem)} /></TableCell>
+                      <TableCell><StatusBadge v={s.lan} hasProblem={Boolean(s.lanProblem)} /></TableCell>
+                      <TableCell><StatusBadge v={s.printer} hasProblem={Boolean(s.printerProblem)} /></TableCell>
+                      <TableCell>{s.tonerAvailable === "Yes" ? `${s.tonerStatus}%` : "No"}</TableCell>
+                      <TableCell><StatusBadge v={s.vcon} hasProblem={Boolean(s.vconProblem)} /></TableCell>
+                      <TableCell className="text-xs">{s.submittedAt?.toDate ? format(s.submittedAt.toDate(), "HH:mm") : ""}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSubmission(s);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Submission Detail Modal */}
+      <Dialog open={Boolean(selectedSubmission)} onOpenChange={(open) => !open && setSelectedSubmission(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span>Checklist Details — {selectedSubmission?.employeeName}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {selectedSubmission && (
+            <div className="space-y-4 text-sm mt-2">
+              <div className="grid grid-cols-2 gap-2 p-3 bg-muted/40 rounded-lg">
+                <div><span className="text-xs text-muted-foreground block">Date</span><strong>{selectedSubmission.date}</strong></div>
+                <div><span className="text-xs text-muted-foreground block">Branch</span><strong>{selectedSubmission.branch}</strong></div>
+                <div><span className="text-xs text-muted-foreground block">Project</span><strong>{selectedSubmission.projectName}</strong></div>
+                <div><span className="text-xs text-muted-foreground block">Employee ID</span><strong>{selectedSubmission.employeeID}</strong></div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 border rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium flex items-center gap-2"><Wifi className="h-4 w-4" />WiFi</span>
+                    <StatusBadge v={selectedSubmission.wifi} />
+                  </div>
+                  {selectedSubmission.wifiProblem && (
+                    <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
+                      <strong>Issue:</strong> {selectedSubmission.wifiProblem}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 border rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium flex items-center gap-2"><Cable className="h-4 w-4" />LAN</span>
+                    <StatusBadge v={selectedSubmission.lan} />
+                  </div>
+                  {selectedSubmission.lanProblem && (
+                    <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
+                      <strong>Issue:</strong> {selectedSubmission.lanProblem}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 border rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium flex items-center gap-2"><Printer className="h-4 w-4" />Printer</span>
+                    <StatusBadge v={selectedSubmission.printer} />
+                  </div>
+                  {selectedSubmission.printerIP && (
+                    <div className="text-xs text-muted-foreground">IP Address: <span className="font-mono">{selectedSubmission.printerIP}</span></div>
+                  )}
+                  {selectedSubmission.printerProblem && (
+                    <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
+                      <strong>Issue:</strong> {selectedSubmission.printerProblem}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 border rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium flex items-center gap-2"><Droplet className="h-4 w-4" />Toner</span>
+                    <Badge variant="outline">{selectedSubmission.tonerAvailable === "Yes" ? `Available (${selectedSubmission.tonerStatus}%)` : "Not Available"}</Badge>
+                  </div>
+                </div>
+
+                <div className="p-3 border rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium flex items-center gap-2"><Monitor className="h-4 w-4" />VCON / Laptop Room</span>
+                    <StatusBadge v={selectedSubmission.vcon} />
+                  </div>
+                  {selectedSubmission.vconProblem && (
+                    <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
+                      <strong>Issue:</strong> {selectedSubmission.vconProblem}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function StatusBadge({ v }: { v: string }) {
+function StatusBadge({ v, hasProblem }: { v: string; hasProblem?: boolean }) {
   const cls =
     v === "Working" ? "bg-success text-success-foreground" :
     v === "Not Working" ? "bg-destructive text-destructive-foreground" :
     "bg-muted text-muted-foreground";
-  return <Badge className={cls}>{v}</Badge>;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Badge className={cls}>{v}</Badge>
+      {hasProblem && <AlertTriangle className="h-3 w-3 text-destructive inline" title="Issue reported" />}
+    </span>
+  );
 }
 
 function Kpi({ label, value, icon, tone }: { label: string; value: number; icon: React.ReactNode; tone: "success" | "danger" | "warning" | "info" }) {
