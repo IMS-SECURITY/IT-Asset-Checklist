@@ -79,6 +79,7 @@ function SuperPanel() {
       Employee: s.employeeName,
       WiFi: s.wifi,
       LAN: s.lan,
+      "Manage Engine DS": s.manageEngineDS || "",
       "Printer Status": s.printer,
       "Printers (IP & Status)": s.printers?.map((p: any) => `${p.ip || "Printer"}: ${p.status}${p.problem ? ` (${p.problem})` : ""}`).join("; ") || s.printerIP || "",
       "Toner Details": formatPrintersSummary(s.printers, s, "\n"),

@@ -49,6 +49,8 @@ export interface Checklist {
   wifiProblem?: string;
   lan: Status;
   lanProblem?: string;
+  manageEngineDS?: Status;
+  manageEngineDSProblem?: string;
   printers?: PrinterItem[];
   printer: Status;
   printerIP?: string;

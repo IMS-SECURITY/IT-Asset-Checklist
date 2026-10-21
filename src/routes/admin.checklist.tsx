@@ -27,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { RefreshCw, Download, Wifi, Cable, Printer, Monitor, Droplet, AlertTriangle, CheckCircle2, XCircle, Eye, Clock, Trash2, RotateCcw } from "lucide-react";
+import { RefreshCw, Download, Wifi, Cable, Server, Printer, Monitor, Droplet, AlertTriangle, CheckCircle2, XCircle, Eye, Clock, Trash2, RotateCcw } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { formatPrintersSummary } from "@/lib/printer-helpers";
@@ -259,6 +259,7 @@ function AdminDashboard() {
       notSubmittedToday: notSubmittedToday.length,
       wifiDown: submissions.filter((s) => s.wifi === "Not Working").length,
       lanDown: submissions.filter((s) => s.lan === "Not Working").length,
+      manageEngineDown: submissions.filter((s) => s.manageEngineDS === "Not Working").length,
       printerDown: submissions.filter((s) => {
         if (s.printers && s.printers.length > 0) {
           return s.printers.some((p: any) => p.status === "Not Working");
@@ -307,6 +308,7 @@ function AdminDashboard() {
       ["Not Submitted Today", counts.notSubmittedToday],
       ["WiFi Not Working", counts.wifiDown],
       ["LAN Not Working", counts.lanDown],
+      ["Manage Engine DS Not Working", counts.manageEngineDown],
       ["Printer Not Working", counts.printerDown],
       ["Low Toner (<20%)", counts.lowToner],
       ["VCON Issues", counts.vconDown],
@@ -323,6 +325,8 @@ function AdminDashboard() {
       "WiFi Problem": s.wifiProblem || "",
       LAN: s.lan,
       "LAN Problem": s.lanProblem || "",
+      "Manage Engine DS": s.manageEngineDS || "",
+      "Manage Engine DS Problem": s.manageEngineDSProblem || "",
       "Printer Status": s.printer,
       "Printers (IP & Status)": s.printers?.map((p: any) => `${p.ip || "Printer"}: ${p.status}${p.problem ? ` (${p.problem})` : ""}`).join("; ") || s.printerIP || "",
       "Toner Details": formatPrintersSummary(s.printers, s, "\n"),
@@ -484,11 +488,12 @@ function AdminDashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <Kpi label="Submitted Today" value={counts.submittedToday} icon={<CheckCircle2 className="h-4 w-4" />} tone="success" />
         <Kpi label="Not Submitted" value={counts.notSubmittedToday} icon={<XCircle className="h-4 w-4" />} tone="danger" />
         <Kpi label="WiFi Down" value={counts.wifiDown} icon={<Wifi className="h-4 w-4" />} tone="danger" />
         <Kpi label="LAN Down" value={counts.lanDown} icon={<Cable className="h-4 w-4" />} tone="danger" />
+        <Kpi label="Engine DS Down" value={counts.manageEngineDown} icon={<Server className="h-4 w-4" />} tone="danger" />
         <Kpi label="Printer Down" value={counts.printerDown} icon={<Printer className="h-4 w-4" />} tone="danger" />
         <Kpi label="Low Toner" value={counts.lowToner} icon={<Droplet className="h-4 w-4" />} tone="warning" />
         <Kpi label="VCON Issues" value={counts.vconDown} icon={<Monitor className="h-4 w-4" />} tone="danger" />
@@ -497,6 +502,7 @@ function AdminDashboard() {
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         <PieCard title="WiFi Status" data={statusData("wifi")} />
         <PieCard title="LAN Status" data={statusData("lan")} />
+        <PieCard title="Manage Engine DS" data={statusData("manageEngineDS")} />
         <PieCard title="Printer Status" data={statusData("printer")} />
         <PieCard title="VCON Status" data={statusData("vcon")} />
         <Card>
@@ -576,12 +582,12 @@ function AdminDashboard() {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Date</TableHead><TableHead>Employee</TableHead><TableHead>ID</TableHead><TableHead>Project</TableHead><TableHead>Branch</TableHead>
-                <TableHead>WiFi</TableHead><TableHead>LAN</TableHead><TableHead>Printer</TableHead><TableHead>Toner</TableHead><TableHead>VCON</TableHead><TableHead>Time</TableHead>
+                <TableHead>WiFi</TableHead><TableHead>LAN</TableHead><TableHead>Engine DS</TableHead><TableHead>Printer</TableHead><TableHead>Toner</TableHead><TableHead>VCON</TableHead><TableHead>Time</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {submissions.length === 0 ? (
-                  <TableRow><TableCell colSpan={12} className="text-center text-sm text-muted-foreground py-6">No submissions found for the selected filter and dates</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-6">No submissions found for the selected filter and dates</TableCell></TableRow>
                 ) : (
                   submissions.sort((a, b) => (a.date < b.date ? 1 : -1)).map((s) => (
                     <TableRow key={s.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => setSelectedSubmission(s)}>
@@ -592,6 +598,7 @@ function AdminDashboard() {
                       <TableCell>{s.branch}</TableCell>
                       <TableCell><StatusBadge v={s.wifi} hasProblem={Boolean(s.wifiProblem)} /></TableCell>
                       <TableCell><StatusBadge v={s.lan} hasProblem={Boolean(s.lanProblem)} /></TableCell>
+                      <TableCell><StatusBadge v={s.manageEngineDS || "NA"} hasProblem={Boolean(s.manageEngineDSProblem)} /></TableCell>
                       <TableCell>
                         <StatusBadge v={s.printer} hasProblem={Boolean(s.printerProblem)} />
                         {s.printers && s.printers.length > 1 && (
@@ -694,6 +701,18 @@ function AdminDashboard() {
                   {selectedSubmission.lanProblem && (
                     <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
                       <strong>Issue:</strong> {selectedSubmission.lanProblem}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 border rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium flex items-center gap-2"><Server className="h-4 w-4" />Manage Engine DS System</span>
+                    <StatusBadge v={selectedSubmission.manageEngineDS || "NA"} />
+                  </div>
+                  {selectedSubmission.manageEngineDSProblem && (
+                    <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
+                      <strong>Issue:</strong> {selectedSubmission.manageEngineDSProblem}
                     </div>
                   )}
                 </div>

@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, Loader2, Wifi, Cable, Printer, Droplet, Monitor, Plus, Trash2, RotateCcw, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Loader2, Wifi, Cable, Server, Printer, Droplet, Monitor, Plus, Trash2, RotateCcw, AlertTriangle } from "lucide-react";
 import type { PrinterItem, PrinterType } from "@/lib/types";
 import { computeOverallPrinterStatus } from "@/lib/printer-helpers";
 
@@ -62,6 +62,8 @@ function ChecklistForm() {
   const [wifiProblem, setWifiProblem] = useState("");
   const [lan, setLan] = useState<Status | "">("");
   const [lanProblem, setLanProblem] = useState("");
+  const [manageEngineDS, setManageEngineDS] = useState<Status | "">("");
+  const [manageEngineDSProblem, setManageEngineDSProblem] = useState("");
 
   const resetFormState = () => {
     setBranch("");
@@ -69,6 +71,8 @@ function ChecklistForm() {
     setWifiProblem("");
     setLan("");
     setLanProblem("");
+    setManageEngineDS("");
+    setManageEngineDSProblem("");
     setPrinters([
       {
         id: "1",
@@ -153,6 +157,10 @@ function ChecklistForm() {
 
   const wifiOk = wifi === "Working" || wifi === "NA" || (wifi === "Not Working" && wifiProblem.trim().length > 0);
   const lanOk = lan === "Working" || lan === "NA" || (lan === "Not Working" && lanProblem.trim().length > 0);
+  const manageEngineDSOk =
+    manageEngineDS === "Working" ||
+    manageEngineDS === "NA" ||
+    (manageEngineDS === "Not Working" && manageEngineDSProblem.trim().length > 0);
 
   const printersOk =
     printers.length > 0 &&
@@ -182,10 +190,20 @@ function ChecklistForm() {
 
   const showWifi = branch !== "";
   const showLan = showWifi && wifi !== "" && wifiOk;
-  const showPrinters = showLan && lan !== "" && lanOk;
+  const showManageEngine = showLan && lan !== "" && lanOk;
+  const showPrinters = showManageEngine && manageEngineDS !== "" && manageEngineDSOk;
   const showVcon = showPrinters && printersOk;
   const allValid =
-    branch && wifi && lan && printersOk && vcon && wifiOk && lanOk && vconOk;
+    branch &&
+    wifi &&
+    lan &&
+    manageEngineDS &&
+    printersOk &&
+    vcon &&
+    wifiOk &&
+    lanOk &&
+    manageEngineDSOk &&
+    vconOk;
 
   const handleSubmit = async () => {
     if (!user || !profile || !allValid) return;
@@ -215,6 +233,8 @@ function ChecklistForm() {
         wifiProblem: wifi === "Not Working" ? wifiProblem : "",
         lan,
         lanProblem: lan === "Not Working" ? lanProblem : "",
+        manageEngineDS,
+        manageEngineDSProblem: manageEngineDS === "Not Working" ? manageEngineDSProblem : "",
         printers,
         printer: overallPrinter,
         printerIP: combinedIP,
@@ -382,6 +402,32 @@ function ChecklistForm() {
                   <div>
                     <Label>LAN Problem</Label>
                     <Textarea value={lanProblem} onChange={(e) => setLanProblem(e.target.value)} required />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {showManageEngine && (
+          <motion.div key="manageEngine" variants={sectionVariants} initial="hidden" animate="visible" exit="exit">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Server className="h-4 w-4" />Manage Engine DS System
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <StatusRadio value={manageEngineDS} onChange={(v) => setManageEngineDS(v as Status)} />
+                {manageEngineDS === "Not Working" && (
+                  <div>
+                    <Label>Manage Engine DS System Problem</Label>
+                    <Textarea
+                      value={manageEngineDSProblem}
+                      onChange={(e) => setManageEngineDSProblem(e.target.value)}
+                      placeholder="Describe the issue with Manage Engine DS System"
+                      required
+                    />
                   </div>
                 )}
               </CardContent>

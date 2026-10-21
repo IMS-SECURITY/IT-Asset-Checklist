@@ -90,6 +90,7 @@ function renderHtml({ projectName, dateStr, filled, notFilled, submissions }) {
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${s.employeeName || ""}</td>
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${statusBadge(s.wifi)}</td>
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${statusBadge(s.lan)}</td>
+          <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${statusBadge(s.manageEngineDS)}</td>
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">
             ${statusBadge(s.printer)}
             ${s.printers && s.printers.length > 1 ? `<div style="font-size:11px;color:#6b7280;margin-top:2px;">${s.printers.length} Printers</div>` : ""}
@@ -99,7 +100,7 @@ function renderHtml({ projectName, dateStr, filled, notFilled, submissions }) {
         </tr>`,
         )
         .join("")
-    : `<tr><td colspan="7" style="padding:12px;color:#6b7280;">No submissions yet.</td></tr>`;
+    : `<tr><td colspan="8" style="padding:12px;color:#6b7280;">No submissions yet.</td></tr>`;
 
   return `
   <div style="font-family:Arial,sans-serif;color:#111827;max-width:820px;margin:0 auto;">
@@ -138,6 +139,7 @@ function renderHtml({ projectName, dateStr, filled, notFilled, submissions }) {
           <th style="text-align:left;padding:10px;">Employee</th>
           <th style="text-align:left;padding:10px;">WiFi</th>
           <th style="text-align:left;padding:10px;">LAN</th>
+          <th style="text-align:left;padding:10px;">Manage Engine DS</th>
           <th style="text-align:left;padding:10px;">Printer</th>
           <th style="text-align:left;padding:10px;">Toner</th>
           <th style="text-align:left;padding:10px;">VCON</th>

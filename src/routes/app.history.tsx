@@ -96,13 +96,14 @@ function History() {
                   </div>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid sm:grid-cols-3 gap-2 text-sm">
+              <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                 <Item label="WiFi" value={r.wifi} extra={r.wifiProblem} />
                 <Item label="LAN" value={r.lan} extra={r.lanProblem} />
+                <Item label="Manage Engine DS" value={r.manageEngineDS || "NA"} extra={r.manageEngineDSProblem} />
                 <Item label="VCON" value={r.vcon} extra={r.vconProblem} />
 
                 {r.printers && r.printers.length > 0 ? (
-                  <div className="sm:col-span-3 p-2.5 border rounded-lg bg-muted/30 space-y-2 mt-1">
+                  <div className="col-span-2 sm:col-span-4 p-2.5 border rounded-lg bg-muted/30 space-y-2 mt-1">
                     <div className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
                       <span>Printers & Toner Status ({r.printers.length})</span>
                       <Badge variant="outline">{r.printer || "Status"}</Badge>
