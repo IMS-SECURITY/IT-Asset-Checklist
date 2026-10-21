@@ -31,6 +31,7 @@ import { EmailRecipientsSection } from "@/components/EmailRecipientsSection";
 import { SendNowSection } from "@/components/SendNowSection";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
+import { formatPrintersSummary } from "@/lib/printer-helpers";
 
 export const Route = createFileRoute("/super")({
   component: () => (
@@ -71,8 +72,17 @@ function SuperPanel() {
       AdminProjects: (e.adminProjects || []).join(", "),
     }))), "Users");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(submissions.map((s) => ({
-      Date: s.date, Project: s.projectName, Branch: s.branch, EmployeeID: s.employeeID, Employee: s.employeeName,
-      WiFi: s.wifi, LAN: s.lan, Printer: s.printer, Toner: s.tonerAvailable === "Yes" ? `${s.tonerStatus}%` : "No", VCON: s.vcon,
+      Date: s.date,
+      Project: s.projectName,
+      Branch: s.branch,
+      EmployeeID: s.employeeID,
+      Employee: s.employeeName,
+      WiFi: s.wifi,
+      LAN: s.lan,
+      "Printer Status": s.printer,
+      "Printers (IP & Status)": s.printers?.map((p: any) => `${p.ip || "Printer"}: ${p.status}${p.problem ? ` (${p.problem})` : ""}`).join("; ") || s.printerIP || "",
+      "Toner Details": formatPrintersSummary(s.printers, s, "\n"),
+      VCON: s.vcon,
       SubmittedAt: s.submittedAt?.toDate ? format(s.submittedAt.toDate(), "yyyy-MM-dd HH:mm:ss") : "",
     }))), "Submissions");
     XLSX.writeFile(wb, `all_projects_${format(new Date(), "yyyy-MM-dd")}.xlsx`);

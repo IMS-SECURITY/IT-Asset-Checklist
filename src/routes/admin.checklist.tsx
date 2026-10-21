@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { RefreshCw, Download, Wifi, Cable, Printer, Monitor, Droplet, AlertTriangle, CheckCircle2, XCircle, Eye, Clock } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
+import { formatPrintersSummary } from "@/lib/printer-helpers";
 
 export const Route = createFileRoute("/admin/checklist")({
   component: () => (
@@ -244,8 +245,29 @@ function AdminDashboard() {
       notSubmittedToday: notSubmittedToday.length,
       wifiDown: submissions.filter((s) => s.wifi === "Not Working").length,
       lanDown: submissions.filter((s) => s.lan === "Not Working").length,
-      printerDown: submissions.filter((s) => s.printer === "Not Working").length,
-      lowToner: submissions.filter((s) => s.tonerAvailable === "Yes" && (s.tonerStatus ?? 100) < 20).length,
+      printerDown: submissions.filter((s) => {
+        if (s.printers && s.printers.length > 0) {
+          return s.printers.some((p: any) => p.status === "Not Working");
+        }
+        return s.printer === "Not Working";
+      }).length,
+      lowToner: submissions.filter((s) => {
+        if (s.printers && s.printers.length > 0) {
+          return s.printers.some((p: any) => {
+            if (p.status !== "Working") return false;
+            if (p.printerType === "Colour") {
+              return (
+                (p.blackToner ?? 100) < 20 ||
+                (p.yellowToner ?? 100) < 20 ||
+                (p.magentaToner ?? 100) < 20 ||
+                (p.cyanToner ?? 100) < 20
+              );
+            }
+            return (p.blackToner ?? 100) < 20;
+          });
+        }
+        return s.tonerAvailable === "Yes" && (s.tonerStatus ?? 100) < 20;
+      }).length,
       vconDown: submissions.filter((s) => s.vcon === "Not Working").length,
     };
     return c;
@@ -284,16 +306,14 @@ function AdminDashboard() {
       Branch: s.branch,
       Date: s.date,
       WiFi: s.wifi,
-      "WiFi Problem": s.wifiProblem,
+      "WiFi Problem": s.wifiProblem || "",
       LAN: s.lan,
-      "LAN Problem": s.lanProblem,
-      Printer: s.printer,
-      "Printer IP": s.printerIP,
-      "Printer Problem": s.printerProblem,
-      "Toner Available": s.tonerAvailable,
-      "Toner %": s.tonerStatus,
+      "LAN Problem": s.lanProblem || "",
+      "Printer Status": s.printer,
+      "Printers (IP & Status)": s.printers?.map((p: any) => `${p.ip || "Printer"}: ${p.status}${p.problem ? ` (${p.problem})` : ""}`).join("; ") || s.printerIP || "",
+      "Toner Details": formatPrintersSummary(s.printers, s, "\n"),
       VCON: s.vcon,
-      "VCON Problem": s.vconProblem,
+      "VCON Problem": s.vconProblem || "",
       "Submitted At": s.submittedAt?.toDate ? format(s.submittedAt.toDate(), "yyyy-MM-dd HH:mm:ss") : "",
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(subsRows), "Submissions");
@@ -461,8 +481,38 @@ function AdminDashboard() {
                       <TableCell>{s.branch}</TableCell>
                       <TableCell><StatusBadge v={s.wifi} hasProblem={Boolean(s.wifiProblem)} /></TableCell>
                       <TableCell><StatusBadge v={s.lan} hasProblem={Boolean(s.lanProblem)} /></TableCell>
-                      <TableCell><StatusBadge v={s.printer} hasProblem={Boolean(s.printerProblem)} /></TableCell>
-                      <TableCell>{s.tonerAvailable === "Yes" ? `${s.tonerStatus}%` : "No"}</TableCell>
+                      <TableCell>
+                        <StatusBadge v={s.printer} hasProblem={Boolean(s.printerProblem)} />
+                        {s.printers && s.printers.length > 1 && (
+                          <span className="text-[10px] text-muted-foreground block font-mono mt-0.5">
+                            {s.printers.length} Printers
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[260px]">
+                        {s.printers && s.printers.length > 0 ? (
+                          <div className="space-y-1">
+                            {s.printers.map((p: any, pIdx: number) => (
+                              <div key={p.id || pIdx} className="text-[11px] leading-tight">
+                                <span className="font-mono font-medium text-foreground">{p.ip || `P${pIdx + 1}`}: </span>
+                                {p.status === "Working" ? (
+                                  p.printerType === "Colour" ? (
+                                    <span className="text-muted-foreground">
+                                      K:{p.blackToner ?? 0}% Y:{p.yellowToner ?? 0}% M:{p.magentaToner ?? 0}% C:{p.cyanToner ?? 0}%
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">Black:{p.blackToner ?? 0}%</span>
+                                  )
+                                ) : (
+                                  <span className="text-destructive font-medium">{p.status}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span>{s.tonerAvailable === "Yes" ? `${s.tonerStatus}%` : "No"}</span>
+                        )}
+                      </TableCell>
                       <TableCell><StatusBadge v={s.vcon} hasProblem={Boolean(s.vconProblem)} /></TableCell>
                       <TableCell className="text-xs">{s.submittedAt?.toDate ? format(s.submittedAt.toDate(), "HH:mm") : ""}</TableCell>
                       <TableCell className="text-right">
@@ -528,27 +578,90 @@ function AdminDashboard() {
                   )}
                 </div>
 
-                <div className="p-3 border rounded-lg space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium flex items-center gap-2"><Printer className="h-4 w-4" />Printer</span>
-                    <StatusBadge v={selectedSubmission.printer} />
-                  </div>
-                  {selectedSubmission.printerIP && (
-                    <div className="text-xs text-muted-foreground">IP Address: <span className="font-mono">{selectedSubmission.printerIP}</span></div>
-                  )}
-                  {selectedSubmission.printerProblem && (
-                    <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
-                      <strong>Issue:</strong> {selectedSubmission.printerProblem}
+                {selectedSubmission.printers && selectedSubmission.printers.length > 0 ? (
+                  <div className="p-3 border rounded-lg space-y-3 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium flex items-center gap-2">
+                        <Printer className="h-4 w-4 text-primary" />
+                        <span>Printers & Toner Status ({selectedSubmission.printers.length})</span>
+                      </span>
+                      <StatusBadge v={selectedSubmission.printer} />
                     </div>
-                  )}
-                </div>
+                    <div className="grid gap-2">
+                      {selectedSubmission.printers.map((p: any, idx: number) => (
+                        <div key={p.id || idx} className="p-3 border rounded-md bg-card text-xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold font-mono text-sm">
+                              {p.ip || `Printer #${idx + 1}`}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="outline" className="text-[10px]">
+                                {p.printerType === "Colour" ? "Colour" : "Monochrome"}
+                              </Badge>
+                              <StatusBadge v={p.status} />
+                            </div>
+                          </div>
 
-                <div className="p-3 border rounded-lg space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium flex items-center gap-2"><Droplet className="h-4 w-4" />Toner</span>
-                    <Badge variant="outline">{selectedSubmission.tonerAvailable === "Yes" ? `Available (${selectedSubmission.tonerStatus}%)` : "Not Available"}</Badge>
+                          {p.status === "Working" && (
+                            <div className="space-y-1">
+                              <div className="text-[11px] font-medium text-muted-foreground">Toner Levels:</div>
+                              {p.printerType === "Colour" ? (
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono">
+                                  <div className="p-1.5 rounded bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-center font-bold">
+                                    Black: {p.blackToner ?? 0}%
+                                  </div>
+                                  <div className="p-1.5 rounded bg-amber-500 text-white text-center font-bold">
+                                    Yellow: {p.yellowToner ?? 0}%
+                                  </div>
+                                  <div className="p-1.5 rounded bg-pink-500 text-white text-center font-bold">
+                                    Magenta: {p.magentaToner ?? 0}%
+                                  </div>
+                                  <div className="p-1.5 rounded bg-sky-500 text-white text-center font-bold">
+                                    Cyan: {p.cyanToner ?? 0}%
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-1.5 rounded bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-center font-bold font-mono">
+                                  Black Toner: {p.blackToner ?? 0}%
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {p.problem && (
+                            <div className="text-xs text-destructive bg-destructive/10 p-2 rounded">
+                              <strong>Issue:</strong> {p.problem}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="p-3 border rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium flex items-center gap-2"><Printer className="h-4 w-4" />Printer</span>
+                        <StatusBadge v={selectedSubmission.printer} />
+                      </div>
+                      {selectedSubmission.printerIP && (
+                        <div className="text-xs text-muted-foreground">IP Address: <span className="font-mono">{selectedSubmission.printerIP}</span></div>
+                      )}
+                      {selectedSubmission.printerProblem && (
+                        <div className="text-xs text-destructive mt-1 bg-destructive/10 p-2 rounded">
+                          <strong>Issue:</strong> {selectedSubmission.printerProblem}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-3 border rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium flex items-center gap-2"><Droplet className="h-4 w-4" />Toner</span>
+                        <Badge variant="outline">{selectedSubmission.tonerAvailable === "Yes" ? `Available (${selectedSubmission.tonerStatus}%)` : "Not Available"}</Badge>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="p-3 border rounded-lg space-y-1">
                   <div className="flex items-center justify-between">

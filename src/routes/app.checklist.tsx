@@ -15,7 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, Loader2, Wifi, Cable, Printer, Droplet, Monitor } from "lucide-react";
+import { CheckCircle2, Loader2, Wifi, Cable, Printer, Droplet, Monitor, Plus, Trash2 } from "lucide-react";
+import type { PrinterItem, PrinterType } from "@/lib/types";
+import { computeOverallPrinterStatus } from "@/lib/printer-helpers";
 
 export const Route = createFileRoute("/app/checklist")({
   component: () => (
@@ -48,13 +50,51 @@ function ChecklistForm() {
   const [wifiProblem, setWifiProblem] = useState("");
   const [lan, setLan] = useState<Status | "">("");
   const [lanProblem, setLanProblem] = useState("");
-  const [printer, setPrinter] = useState<Status | "">("");
-  const [printerIP, setPrinterIP] = useState("");
-  const [printerProblem, setPrinterProblem] = useState("");
-  const [tonerAvailable, setTonerAvailable] = useState<YesNo | "">("");
-  const [tonerStatus, setTonerStatus] = useState<string>("");
+
+  // Multiple Printers with combined toner status
+  const [printers, setPrinters] = useState<PrinterItem[]>([
+    {
+      id: "1",
+      status: "Working",
+      ip: "",
+      printerType: "Monochrome",
+      blackToner: null,
+      yellowToner: null,
+      magentaToner: null,
+      cyanToner: null,
+      problem: "",
+    },
+  ]);
+
   const [vcon, setVcon] = useState<Status | "">("");
   const [vconProblem, setVconProblem] = useState("");
+
+  const addPrinter = () => {
+    setPrinters((prev) => [
+      ...prev,
+      {
+        id: String(Date.now()),
+        status: "Working",
+        ip: "",
+        printerType: "Monochrome",
+        blackToner: null,
+        yellowToner: null,
+        magentaToner: null,
+        cyanToner: null,
+        problem: "",
+      },
+    ]);
+  };
+
+  const removePrinter = (id: string) => {
+    setPrinters((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const updatePrinter = (id: string, updates: Partial<PrinterItem>) => {
+    setPrinters((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+    );
+  };
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -78,22 +118,39 @@ function ChecklistForm() {
 
   const wifiOk = wifi === "Working" || wifi === "NA" || (wifi === "Not Working" && wifiProblem.trim().length > 0);
   const lanOk = lan === "Working" || lan === "NA" || (lan === "Not Working" && lanProblem.trim().length > 0);
-  const printerOk =
-    printer === "NA" ||
-    (printer === "Working" && printerIP.trim().length > 0) ||
-    (printer === "Not Working" && printerProblem.trim().length > 0);
-  const tonerOk =
-    tonerAvailable === "No" ||
-    (tonerAvailable === "Yes" && tonerStatus !== "" && Number(tonerStatus) >= 0 && Number(tonerStatus) <= 100);
+
+  const printersOk =
+    printers.length > 0 &&
+    printers.every((p) => {
+      if (p.status === "NA") return true;
+      if (p.status === "Not Working") {
+        return Boolean(p.problem && p.problem.trim().length > 0);
+      }
+      if (p.status === "Working") {
+        if (!p.ip || !p.ip.trim()) return false;
+        if (p.printerType === "Colour") {
+          return (
+            p.blackToner !== null && p.blackToner !== undefined && p.blackToner >= 0 && p.blackToner <= 100 &&
+            p.yellowToner !== null && p.yellowToner !== undefined && p.yellowToner >= 0 && p.yellowToner <= 100 &&
+            p.magentaToner !== null && p.magentaToner !== undefined && p.magentaToner >= 0 && p.magentaToner <= 100 &&
+            p.cyanToner !== null && p.cyanToner !== undefined && p.cyanToner >= 0 && p.cyanToner <= 100
+          );
+        } else {
+          // Monochrome
+          return p.blackToner !== null && p.blackToner !== undefined && p.blackToner >= 0 && p.blackToner <= 100;
+        }
+      }
+      return false;
+    });
+
   const vconOk = vcon === "Working" || vcon === "NA" || (vcon === "Not Working" && vconProblem.trim().length > 0);
 
   const showWifi = branch !== "";
   const showLan = showWifi && wifi !== "" && wifiOk;
-  const showPrinter = showLan && lan !== "" && lanOk;
-  const showToner = showPrinter && printer !== "" && printerOk;
-  const showVcon = showToner && tonerAvailable !== "" && tonerOk;
+  const showPrinters = showLan && lan !== "" && lanOk;
+  const showVcon = showPrinters && printersOk;
   const allValid =
-    branch && wifi && lan && printer && tonerAvailable && vcon && wifiOk && lanOk && printerOk && tonerOk && vconOk;
+    branch && wifi && lan && printersOk && vcon && wifiOk && lanOk && vconOk;
 
   const handleSubmit = async () => {
     if (!user || !profile || !allValid) return;
@@ -101,6 +158,16 @@ function ChecklistForm() {
     try {
       const docId = `${user.uid}_${today}`;
       const ref = doc(db, "checklists", docId);
+
+      const overallPrinter = computeOverallPrinterStatus(printers);
+      const combinedIP = printers.map((p) => p.ip?.trim()).filter(Boolean).join(", ");
+      const combinedProblems = printers
+        .filter((p) => p.status === "Not Working" && p.problem)
+        .map((p) => (p.ip ? `${p.ip}: ${p.problem}` : p.problem))
+        .join("; ");
+      const hasToner = printers.some((p) => p.status === "Working" && p.blackToner !== null);
+      const primaryBlackToner = printers.find((p) => p.blackToner !== null && p.blackToner !== undefined)?.blackToner ?? null;
+
       await setDoc(ref, {
         uid: user.uid,
         employeeID: profile.employeeID,
@@ -113,11 +180,12 @@ function ChecklistForm() {
         wifiProblem: wifi === "Not Working" ? wifiProblem : "",
         lan,
         lanProblem: lan === "Not Working" ? lanProblem : "",
-        printer,
-        printerIP: printer === "Working" ? printerIP : "",
-        printerProblem: printer === "Not Working" ? printerProblem : "",
-        tonerAvailable,
-        tonerStatus: tonerAvailable === "Yes" ? Number(tonerStatus) : null,
+        printers,
+        printer: overallPrinter,
+        printerIP: combinedIP,
+        printerProblem: combinedProblems,
+        tonerAvailable: hasToner ? "Yes" : "No",
+        tonerStatus: primaryBlackToner,
         vcon,
         vconProblem: vcon === "Not Working" ? vconProblem : "",
         submittedAt: serverTimestamp(),
@@ -217,47 +285,261 @@ function ChecklistForm() {
           </motion.div>
         )}
 
-        {showPrinter && (
-          <motion.div key="printer" variants={sectionVariants} initial="hidden" animate="visible" exit="exit">
+        {showPrinters && (
+          <motion.div key="printers" variants={sectionVariants} initial="hidden" animate="visible" exit="exit">
             <Card>
-              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Printer className="h-4 w-4" />Printer</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <StatusRadio value={printer} onChange={(v) => setPrinter(v as Status)} />
-                {printer === "Working" && (
-                  <div>
-                    <Label>Printer IP</Label>
-                    <Input value={printerIP} onChange={(e) => setPrinterIP(e.target.value)} placeholder="192.168.1.10" required />
-                  </div>
-                )}
-                {printer === "Not Working" && (
-                  <div>
-                    <Label>Printer Problem</Label>
-                    <Textarea value={printerProblem} onChange={(e) => setPrinterProblem(e.target.value)} required />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Printer className="h-4 w-4 text-primary" />
+                    <span>Printers & Toner Status</span>
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Record printer status, IP, and toner percentage for each printer at this location.
+                  </p>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={addPrinter} className="h-8 text-xs">
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Printer
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {printers.map((p, idx) => (
+                  <div
+                    key={p.id}
+                    className="p-4 border rounded-xl bg-card/60 dark:bg-muted/20 space-y-3 relative shadow-xs"
+                  >
+                    <div className="flex items-center justify-between pb-1 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm">
+                          Printer #{idx + 1}
+                        </span>
+                        {p.ip && (
+                          <span className="text-xs font-mono text-muted-foreground">
+                            ({p.ip})
+                          </span>
+                        )}
+                      </div>
+                      {printers.length > 1 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removePrinter(p.id)}
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                          title="Remove this printer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
 
-        {showToner && (
-          <motion.div key="toner" variants={sectionVariants} initial="hidden" animate="visible" exit="exit">
-            <Card>
-              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Droplet className="h-4 w-4" />Toner Available</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <RadioGroup value={tonerAvailable} onValueChange={(v) => setTonerAvailable(v as YesNo)} className="flex gap-4">
-                  {(["Yes", "No"] as YesNo[]).map((o) => (
-                    <label key={o} className="flex items-center gap-2 cursor-pointer">
-                      <RadioGroupItem value={o} />{o}
-                    </label>
-                  ))}
-                </RadioGroup>
-                {tonerAvailable === "Yes" && (
-                  <div>
-                    <Label>Toner Status %</Label>
-                    <Input type="number" min={0} max={100} value={tonerStatus} onChange={(e) => setTonerStatus(e.target.value)} required />
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Printer Status</Label>
+                      <StatusRadio
+                        value={p.status}
+                        onChange={(v) => updatePrinter(p.id, { status: v as Status })}
+                      />
+                    </div>
+
+                    {p.status === "Working" && (
+                      <div className="space-y-3 pt-1">
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs">Printer IP Address</Label>
+                            <Input
+                              value={p.ip || ""}
+                              onChange={(e) => updatePrinter(p.id, { ip: e.target.value })}
+                              placeholder="e.g. 10.63.192.2"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Printer Type</Label>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={p.printerType === "Monochrome" ? "default" : "outline"}
+                                className={p.printerType === "Monochrome" ? "h-9 text-xs" : "h-9 text-xs"}
+                                onClick={() => updatePrinter(p.id, { printerType: "Monochrome" })}
+                              >
+                                Monochrome (B&W)
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={p.printerType === "Colour" ? "default" : "outline"}
+                                className={
+                                  p.printerType === "Colour"
+                                    ? "h-9 text-xs bg-gradient-to-r from-blue-600 via-pink-600 to-amber-500 text-white"
+                                    : "h-9 text-xs"
+                                }
+                                onClick={() => updatePrinter(p.id, { printerType: "Colour" })}
+                              >
+                                Colour
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Combined Toner Status directly below the printer IP */}
+                        {p.printerType === "Monochrome" ? (
+                          <div className="p-3 border rounded-lg bg-muted/40 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold flex items-center gap-1.5">
+                                <span className="h-2.5 w-2.5 rounded-full bg-slate-900 dark:bg-white inline-block" />
+                                Black Toner Status %
+                              </Label>
+                              <span className="text-xs font-mono text-muted-foreground">
+                                {p.blackToner !== null && p.blackToner !== undefined ? `${p.blackToner}%` : "Not set"}
+                              </span>
+                            </div>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={p.blackToner ?? ""}
+                              onChange={(e) =>
+                                updatePrinter(p.id, {
+                                  blackToner: e.target.value === "" ? null : Number(e.target.value),
+                                })
+                              }
+                              placeholder="0 - 100 % (e.g. 60)"
+                              required
+                            />
+                          </div>
+                        ) : (
+                          <div className="p-3 border rounded-lg bg-muted/40 space-y-2.5">
+                            <Label className="text-xs font-semibold flex items-center gap-1.5">
+                              <Droplet className="h-3.5 w-3.5 text-primary" />
+                              Colour Toner Status % (CMYK)
+                            </Label>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {/* Black */}
+                              <div className="p-2 border rounded-md bg-background space-y-1">
+                                <span className="text-[11px] font-semibold flex items-center gap-1 text-foreground">
+                                  <span className="h-2 w-2 rounded-full bg-slate-900 dark:bg-white" />
+                                  Black
+                                </span>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  className="h-8 text-xs"
+                                  value={p.blackToner ?? ""}
+                                  onChange={(e) =>
+                                    updatePrinter(p.id, {
+                                      blackToner: e.target.value === "" ? null : Number(e.target.value),
+                                    })
+                                  }
+                                  placeholder="0-100"
+                                  required
+                                />
+                              </div>
+
+                              {/* Yellow */}
+                              <div className="p-2 border rounded-md bg-background space-y-1 border-amber-400/50">
+                                <span className="text-[11px] font-semibold flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                  <span className="h-2 w-2 rounded-full bg-amber-400" />
+                                  Yellow
+                                </span>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  className="h-8 text-xs"
+                                  value={p.yellowToner ?? ""}
+                                  onChange={(e) =>
+                                    updatePrinter(p.id, {
+                                      yellowToner: e.target.value === "" ? null : Number(e.target.value),
+                                    })
+                                  }
+                                  placeholder="0-100"
+                                  required
+                                />
+                              </div>
+
+                              {/* Magenta */}
+                              <div className="p-2 border rounded-md bg-background space-y-1 border-pink-400/50">
+                                <span className="text-[11px] font-semibold flex items-center gap-1 text-pink-600 dark:text-pink-400">
+                                  <span className="h-2 w-2 rounded-full bg-pink-500" />
+                                  Magenta
+                                </span>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  className="h-8 text-xs"
+                                  value={p.magentaToner ?? ""}
+                                  onChange={(e) =>
+                                    updatePrinter(p.id, {
+                                      magentaToner: e.target.value === "" ? null : Number(e.target.value),
+                                    })
+                                  }
+                                  placeholder="0-100"
+                                  required
+                                />
+                              </div>
+
+                              {/* Cyan */}
+                              <div className="p-2 border rounded-md bg-background space-y-1 border-sky-400/50">
+                                <span className="text-[11px] font-semibold flex items-center gap-1 text-sky-600 dark:text-sky-400">
+                                  <span className="h-2 w-2 rounded-full bg-sky-400" />
+                                  Cyan
+                                </span>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  className="h-8 text-xs"
+                                  value={p.cyanToner ?? ""}
+                                  onChange={(e) =>
+                                    updatePrinter(p.id, {
+                                      cyanToner: e.target.value === "" ? null : Number(e.target.value),
+                                    })
+                                  }
+                                  placeholder="0-100"
+                                  required
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {p.status === "Not Working" && (
+                      <div className="space-y-2 pt-1">
+                        <div>
+                          <Label className="text-xs">Printer IP Address (Optional)</Label>
+                          <Input
+                            value={p.ip || ""}
+                            onChange={(e) => updatePrinter(p.id, { ip: e.target.value })}
+                            placeholder="e.g. 10.63.192.2"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Printer Problem / Issue</Label>
+                          <Textarea
+                            value={p.problem || ""}
+                            onChange={(e) => updatePrinter(p.id, { problem: e.target.value })}
+                            placeholder="Describe printer issue (e.g. paper jam, offline, cartridge error)"
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addPrinter}
+                  className="w-full border-dashed py-5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Plus className="h-4 w-4 mr-1.5" /> Add Another Printer at this Location
+                </Button>
               </CardContent>
             </Card>
           </motion.div>

@@ -22,6 +22,19 @@ export interface Project {
 
 export type Status = "Working" | "Not Working" | "NA";
 export type YesNo = "Yes" | "No";
+export type PrinterType = "Monochrome" | "Colour";
+
+export interface PrinterItem {
+  id: string;
+  status: Status;
+  ip?: string;
+  problem?: string;
+  printerType?: PrinterType;
+  blackToner?: number | null;
+  cyanToner?: number | null;
+  magentaToner?: number | null;
+  yellowToner?: number | null;
+}
 
 export interface Checklist {
   id?: string;
@@ -36,11 +49,12 @@ export interface Checklist {
   wifiProblem?: string;
   lan: Status;
   lanProblem?: string;
+  printers?: PrinterItem[];
   printer: Status;
   printerIP?: string;
   printerProblem?: string;
   tonerAvailable: YesNo;
-  tonerStatus?: number;
+  tonerStatus?: number | null;
   vcon: Status;
   vconProblem?: string;
   submittedAt: any;

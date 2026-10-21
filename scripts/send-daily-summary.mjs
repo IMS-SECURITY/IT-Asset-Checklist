@@ -53,6 +53,24 @@ function statusBadge(v) {
   return `<span style="display:inline-block;padding:2px 8px;border-radius:9999px;font-size:12px;${color}">${v}</span>`;
 }
 
+function renderTonerCell(s) {
+  if (s.printers && s.printers.length > 0) {
+    return s.printers
+      .map((p, idx) => {
+        const ip = p.ip ? `<b>${p.ip}</b>` : `Printer #${idx + 1}`;
+        if (p.status !== "Working") {
+          return `<div style="margin-bottom:2px;">${ip}: <span style="color:#991b1b;">${p.status}</span></div>`;
+        }
+        if (p.printerType === "Colour") {
+          return `<div style="margin-bottom:2px;">${ip}: <span style="font-size:11px;">K:${p.blackToner ?? 0}% Y:${p.yellowToner ?? 0}% M:${p.magentaToner ?? 0}% C:${p.cyanToner ?? 0}%</span></div>`;
+        }
+        return `<div style="margin-bottom:2px;">${ip}: Black ${p.blackToner ?? 0}%</div>`;
+      })
+      .join("");
+  }
+  return s.tonerAvailable === "Yes" ? `Yes · ${s.tonerStatus ?? "-"}%` : "No";
+}
+
 function renderHtml({ projectName, dateStr, filled, notFilled, submissions }) {
   const row = (v) =>
     `<tr><td style="padding:8px 12px;border-top:1px solid #e5e7eb;">${v}</td></tr>`;
@@ -72,10 +90,11 @@ function renderHtml({ projectName, dateStr, filled, notFilled, submissions }) {
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${s.employeeName || ""}</td>
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${statusBadge(s.wifi)}</td>
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${statusBadge(s.lan)}</td>
-          <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${statusBadge(s.printer)}</td>
-          <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${
-            s.tonerAvailable === "Yes" ? `Yes · ${s.tonerStatus ?? "-"}%` : "No"
-          }</td>
+          <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">
+            ${statusBadge(s.printer)}
+            ${s.printers && s.printers.length > 1 ? `<div style="font-size:11px;color:#6b7280;margin-top:2px;">${s.printers.length} Printers</div>` : ""}
+          </td>
+          <td style="padding:8px 10px;border-top:1px solid #e5e7eb;font-size:12px;">${renderTonerCell(s)}</td>
           <td style="padding:8px 10px;border-top:1px solid #e5e7eb;">${statusBadge(s.vcon)}</td>
         </tr>`,
         )
