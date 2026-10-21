@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { addDoc, collection, doc, getDocs, query, serverTimestamp, setDoc, where } from "firebase/firestore";
+import { addDoc, collection, doc, deleteDoc, getDocs, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { RequireRole } from "@/components/RequireRole";
@@ -13,9 +13,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, Loader2, Wifi, Cable, Printer, Droplet, Monitor, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, Wifi, Cable, Printer, Droplet, Monitor, Plus, Trash2, RotateCcw, AlertTriangle } from "lucide-react";
 import type { PrinterItem, PrinterType } from "@/lib/types";
 import { computeOverallPrinterStatus } from "@/lib/printer-helpers";
 
@@ -44,12 +54,37 @@ function ChecklistForm() {
   const [now, setNow] = useState(new Date());
   const [submitting, setSubmitting] = useState(false);
   const [alreadyDone, setAlreadyDone] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const [branch, setBranch] = useState("");
   const [wifi, setWifi] = useState<Status | "">("");
   const [wifiProblem, setWifiProblem] = useState("");
   const [lan, setLan] = useState<Status | "">("");
   const [lanProblem, setLanProblem] = useState("");
+
+  const resetFormState = () => {
+    setBranch("");
+    setWifi("");
+    setWifiProblem("");
+    setLan("");
+    setLanProblem("");
+    setPrinters([
+      {
+        id: "1",
+        status: "Working",
+        ip: "",
+        printerType: "Monochrome",
+        blackToner: null,
+        yellowToner: null,
+        magentaToner: null,
+        cyanToner: null,
+        problem: "",
+      },
+    ]);
+    setVcon("");
+    setVconProblem("");
+  };
 
   // Multiple Printers with combined toner status
   const [printers, setPrinters] = useState<PrinterItem[]>([
@@ -199,16 +234,85 @@ function ChecklistForm() {
     }
   };
 
+  const handleClearOwnEntry = async () => {
+    if (!user) return;
+    setClearing(true);
+    try {
+      const docId = `${user.uid}_${today}`;
+      await deleteDoc(doc(db, "checklists", docId));
+      resetFormState();
+      setAlreadyDone(false);
+      setConfirmClear(false);
+      toast.success("Today's submission cleared. You can now fill and submit the checklist again.");
+    } catch (err: any) {
+      console.error("Failed to clear entry:", err);
+      toast.error(err?.message || "Failed to clear checklist entry");
+    } finally {
+      setClearing(false);
+    }
+  };
+
   if (alreadyDone) {
     return (
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-        <Card className="max-w-xl mx-auto mt-10">
-          <CardContent className="py-10 text-center space-y-3">
+        <Card className="max-w-xl mx-auto mt-10 shadow-md">
+          <CardContent className="py-10 text-center space-y-4">
             <CheckCircle2 className="h-16 w-16 text-success mx-auto" />
             <h2 className="text-xl font-semibold">You're done for today</h2>
-            <p className="text-muted-foreground">Today's Branch IT Daily Checklist has been submitted.</p>
+            <p className="text-muted-foreground text-sm">
+              Today's Branch IT Daily Checklist has already been submitted for <strong>{today}</strong>.
+            </p>
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-2">
+              <Button
+                variant="outline"
+                className="text-destructive hover:bg-destructive/10 border-destructive/30"
+                onClick={() => setConfirmClear(true)}
+                disabled={clearing}
+              >
+                {clearing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Clearing Entry...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Clear Entry & Resubmit
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
+
+        <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                <span>Clear Today's Checklist Entry?</span>
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2 text-sm text-foreground/80">
+                <p>
+                  Are you sure you want to clear your submission for today (<strong>{today}</strong>)?
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  This will remove your submission from the system and allow you to fill out and submit the checklist form again.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleClearOwnEntry}
+                disabled={clearing}
+                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              >
+                {clearing ? "Clearing..." : "Yes, Clear Entry"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </motion.div>
     );
   }
@@ -563,15 +667,27 @@ function ChecklistForm() {
         )}
       </AnimatePresence>
 
-      <Button
-        onClick={handleSubmit}
-        disabled={!allValid || submitting}
-        className="w-full h-11"
-        style={allValid ? { background: "var(--gradient-primary)" } : undefined}
-      >
-        {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Submit Checklist
-      </Button>
+      <div className="flex flex-col sm:flex-row gap-3 pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={resetFormState}
+          disabled={submitting}
+          className="sm:w-36 text-muted-foreground hover:text-foreground"
+        >
+          <RotateCcw className="h-4 w-4 mr-1.5" />
+          Clear Form
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          disabled={!allValid || submitting}
+          className="flex-1 h-11"
+          style={allValid ? { background: "var(--gradient-primary)" } : undefined}
+        >
+          {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          Submit Checklist
+        </Button>
+      </div>
     </div>
   );
 }

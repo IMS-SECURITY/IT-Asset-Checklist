@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, deleteDoc, getDoc, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { RequireRole } from "@/components/RequireRole";
@@ -17,7 +17,17 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Legend, CartesianGrid,
 } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RefreshCw, Download, Wifi, Cable, Printer, Monitor, Droplet, AlertTriangle, CheckCircle2, XCircle, Eye, Clock } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { RefreshCw, Download, Wifi, Cable, Printer, Monitor, Droplet, AlertTriangle, CheckCircle2, XCircle, Eye, Clock, Trash2, RotateCcw } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { formatPrintersSummary } from "@/lib/printer-helpers";
@@ -75,6 +85,10 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<string>("");
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
+  const [submissionToClear, setSubmissionToClear] = useState<any | null>(null);
+  const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false);
+  const [clearScope, setClearScope] = useState<"today" | "all">("today");
+  const [clearingBusy, setClearingBusy] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -330,6 +344,64 @@ function AdminDashboard() {
     XLSX.writeFile(wb, `checklist_report_${today}.xlsx`);
   };
 
+  const todaySubmissions = useMemo(() => {
+    return submissions.filter((s) => s.date === today);
+  }, [submissions, today]);
+
+  const handleClearSingleSubmission = async (s: any) => {
+    if (!s?.id) return;
+    setClearingBusy(true);
+    try {
+      await deleteDoc(doc(db, "checklists", s.id));
+      setSubmissions((prev) => prev.filter((item) => item.id !== s.id));
+      if (selectedSubmission?.id === s.id) {
+        setSelectedSubmission(null);
+      }
+      setSubmissionToClear(null);
+      toast.success(`Checklist entry for "${s.employeeName}" on ${s.date} has been cleared.`);
+    } catch (err: any) {
+      console.error("Failed to clear submission:", err);
+      toast.error(err?.message || "Failed to clear checklist entry");
+    } finally {
+      setClearingBusy(false);
+    }
+  };
+
+  const handleClearAll = async () => {
+    const targets = clearScope === "today" ? todaySubmissions : submissions;
+    if (targets.length === 0) {
+      toast.info("No submissions to clear.");
+      setClearAllDialogOpen(false);
+      return;
+    }
+
+    setClearingBusy(true);
+    try {
+      for (let i = 0; i < targets.length; i += 400) {
+        const chunk = targets.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach((s) => {
+          batch.delete(doc(db, "checklists", s.id));
+        });
+        await batch.commit();
+      }
+
+      const clearedIds = new Set(targets.map((s) => s.id));
+      setSubmissions((prev) => prev.filter((s) => !clearedIds.has(s.id)));
+      if (selectedSubmission && clearedIds.has(selectedSubmission.id)) {
+        setSelectedSubmission(null);
+      }
+      setClearAllDialogOpen(false);
+      toast.success(`Successfully cleared ${targets.length} submission(s). Employees can now resubmit.`);
+      await load();
+    } catch (err: any) {
+      console.error("Failed to clear all submissions:", err);
+      toast.error(err?.message || "Failed to clear submissions");
+    } finally {
+      setClearingBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap gap-3 items-end justify-between">
@@ -377,6 +449,19 @@ function AdminDashboard() {
             Refresh
           </Button>
           <Button onClick={exportXlsx}><Download className="h-4 w-4 mr-1" />Export</Button>
+          <Button
+            variant="outline"
+            className="text-destructive hover:bg-destructive/10 border-destructive/40"
+            onClick={() => {
+              setClearScope("today");
+              setClearAllDialogOpen(true);
+            }}
+            disabled={submissions.length === 0 || loading}
+            title="Clear checklist submissions so employees can resubmit"
+          >
+            <Trash2 className="h-4 w-4 mr-1 text-destructive" />
+            Clear All
+          </Button>
         </div>
       </motion.div>
 
@@ -459,14 +544,40 @@ function AdminDashboard() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Submissions ({submissions.length})</CardTitle></CardHeader>
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <span>Submissions ({submissions.length})</span>
+              {todaySubmissions.length > 0 && (
+                <Badge variant="secondary" className="font-normal text-xs">
+                  {todaySubmissions.length} Today
+                </Badge>
+              )}
+            </CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 border-destructive/40 text-xs"
+              onClick={() => {
+                setClearScope("today");
+                setClearAllDialogOpen(true);
+              }}
+              disabled={submissions.length === 0}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1 text-destructive" />
+              Clear All
+            </Button>
+          </div>
+        </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Date</TableHead><TableHead>Employee</TableHead><TableHead>ID</TableHead><TableHead>Project</TableHead><TableHead>Branch</TableHead>
                 <TableHead>WiFi</TableHead><TableHead>LAN</TableHead><TableHead>Printer</TableHead><TableHead>Toner</TableHead><TableHead>VCON</TableHead><TableHead>Time</TableHead>
-                <TableHead className="text-right">Details</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {submissions.length === 0 ? (
@@ -515,17 +626,26 @@ function AdminDashboard() {
                       </TableCell>
                       <TableCell><StatusBadge v={s.vcon} hasProblem={Boolean(s.vconProblem)} /></TableCell>
                       <TableCell className="text-xs">{s.submittedAt?.toDate ? format(s.submittedAt.toDate(), "HH:mm") : ""}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedSubmission(s);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="View Details"
+                            onClick={() => setSelectedSubmission(s)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            title={`Clear Entry for ${s.employeeName}`}
+                            onClick={() => setSubmissionToClear(s)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -674,11 +794,162 @@ function AdminDashboard() {
                     </div>
                   )}
                 </div>
+
+                <div className="pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
+                  <div className="text-xs text-muted-foreground">
+                    Need to allow resubmission? Clearing deletes this entry for <strong>{selectedSubmission.date}</strong>.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedSubmission(null)}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        const s = selectedSubmission;
+                        setSelectedSubmission(null);
+                        setSubmissionToClear(s);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1.5" />
+                      Clear Entry
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Clear Single Entry Confirmation Dialog */}
+      <AlertDialog open={Boolean(submissionToClear)} onOpenChange={(open) => !open && setSubmissionToClear(null)}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              <span>Clear Checklist Entry?</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-1 text-foreground/80">
+              <p>
+                Are you sure you want to clear the submission for{" "}
+                <strong className="text-foreground">{submissionToClear?.employeeName}</strong>?
+              </p>
+              <div className="text-xs space-y-1 bg-muted/60 p-3 rounded-lg border font-normal text-muted-foreground">
+                <div><strong>Date:</strong> {submissionToClear?.date}</div>
+                <div><strong>Branch:</strong> {submissionToClear?.branch}</div>
+                <div><strong>Project:</strong> {submissionToClear?.projectName}</div>
+                <div><strong>Employee ID:</strong> {submissionToClear?.employeeID}</div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This will delete the submission from Firestore and allow this employee to submit their checklist again today.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearingBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={clearingBusy}
+              onClick={() => submissionToClear && handleClearSingleSubmission(submissionToClear)}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {clearingBusy ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
+                  Clearing...
+                </>
+              ) : (
+                "Yes, Clear Entry"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clear All Confirmation Dialog */}
+      <AlertDialog open={clearAllDialogOpen} onOpenChange={setClearAllDialogOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              <span>Clear All Checklist Entries</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-2 text-foreground/80">
+              <p>
+                Select which submissions to clear so employees can submit again:
+              </p>
+
+              <div className="space-y-2 border rounded-lg p-3 bg-muted/40 text-sm">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="clearScope"
+                    value="today"
+                    checked={clearScope === "today"}
+                    onChange={() => setClearScope("today")}
+                    className="mt-1"
+                  />
+                  <div>
+                    <span className="font-semibold block text-foreground">
+                      Today's Submissions Only ({todaySubmissions.length} entries)
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Deletes submissions for today ({today}). Employees will be able to resubmit today's checklist.
+                    </span>
+                  </div>
+                </label>
+
+                {submissions.length !== todaySubmissions.length && (
+                  <label className="flex items-start gap-2.5 cursor-pointer pt-2 border-t">
+                    <input
+                      type="radio"
+                      name="clearScope"
+                      value="all"
+                      checked={clearScope === "all"}
+                      onChange={() => setClearScope("all")}
+                      className="mt-1"
+                    />
+                    <div>
+                      <span className="font-semibold block text-foreground">
+                        All Filtered Submissions ({submissions.length} entries)
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Deletes all submissions currently displayed in this date range ({fromDate} to {toDate}).
+                      </span>
+                    </div>
+                  </label>
+                )}
+              </div>
+
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
+                <strong>Warning:</strong> This permanently deletes the selected checklist entries from the database.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearingBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={clearingBusy || (clearScope === "today" ? todaySubmissions.length === 0 : submissions.length === 0)}
+              onClick={handleClearAll}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {clearingBusy ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
+                  Clearing...
+                </>
+              ) : (
+                `Clear ${clearScope === "today" ? todaySubmissions.length : submissions.length} Entry(s)`
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

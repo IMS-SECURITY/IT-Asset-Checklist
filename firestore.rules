@@ -42,7 +42,7 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         request.resource.data.uid == request.auth.uid &&
         docId == request.auth.uid + '_' + request.resource.data.date;
-      allow update, delete: if isSuper() || isAdmin();
+      allow update, delete: if isSuper() || isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
     }
 
     // Extra recipients for the daily summary email, managed by super admin.

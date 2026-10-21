@@ -1,15 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import { collection, doc, deleteDoc, getDocs, query, where, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { RequireRole } from "@/components/RequireRole";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { format, subDays } from "date-fns";
-import { Loader2 } from "lucide-react";
+import { Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/app/history")({
   component: () => (
@@ -23,6 +25,22 @@ function History() {
   const { user } = useAuth();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const today = format(new Date(), "yyyy-MM-dd");
+  const [clearingId, setClearingId] = useState<string | null>(null);
+
+  const handleClearTodayEntry = async (id: string) => {
+    if (!confirm("Clear your checklist submission for today? You will be able to submit the checklist again.")) return;
+    setClearingId(id);
+    try {
+      await deleteDoc(doc(db, "checklists", id));
+      setRows((prev) => prev.filter((r) => r.id !== id));
+      toast.success("Today's submission cleared. You can now resubmit your daily checklist.");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to clear submission");
+    } finally {
+      setClearingId(null);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -59,9 +77,23 @@ function History() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center justify-between flex-wrap gap-2">
                   <span>{r.date} · {r.branch}</span>
-                  <span className="text-xs text-muted-foreground font-normal">
-                    {r.submittedAt?.toDate ? format(r.submittedAt.toDate(), "HH:mm:ss") : ""}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-normal">
+                      {r.submittedAt?.toDate ? format(r.submittedAt.toDate(), "HH:mm:ss") : ""}
+                    </span>
+                    {r.date === today && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive hover:bg-destructive/10 border-destructive/30 text-xs h-7 px-2"
+                        onClick={() => handleClearTodayEntry(r.id)}
+                        disabled={clearingId === r.id}
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1" />
+                        {clearingId === r.id ? "Clearing..." : "Clear Entry"}
+                      </Button>
+                    )}
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-3 gap-2 text-sm">
