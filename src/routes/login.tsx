@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { nameKey } from "@/lib/user-admin";
 import { auth, db } from "@/lib/firebase";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -94,11 +94,22 @@ function LoginPage() {
     setLoading(true);
     try {
       const key = nameKey(eName);
-      if (!key) throw new Error("Enter your name.");
-      const lookup = await getDoc(doc(db, "employeeLogins", key));
-      if (!lookup.exists()) throw new Error("Employee name not found. Ask your admin to (re)create your login.");
+      if (!key) throw new Error("Enter your employee name.");
+      let lookup = await getDoc(doc(db, "employeeLogins", key));
+      if (!lookup.exists()) {
+        // Fallback: check if they entered employeeID instead of name
+        const qEmp = query(collection(db, "employees"), where("employeeID", "==", eName.trim()));
+        const snapEmp = await getDocs(qEmp);
+        if (!snapEmp.empty) {
+          const empDoc = snapEmp.docs[0].data();
+          if (empDoc.name) {
+            lookup = await getDoc(doc(db, "employeeLogins", nameKey(empDoc.name)));
+          }
+        }
+      }
+      if (!lookup.exists()) throw new Error("Employee name not found. Ask Super Admin to check your account or reset password.");
       const { email } = lookup.data() as { email?: string };
-      if (!email) throw new Error("Employee record missing email.");
+      if (!email) throw new Error("Employee record missing login credential. Contact Super Admin.");
       const cred = await signInWithEmailAndPassword(auth, email, ePass);
       await finish(cred.user.uid, "employee");
     } catch (err: any) {
@@ -142,13 +153,25 @@ function LoginPage() {
               <TabsContent value="employee">
                 <form onSubmit={handleEmployee} className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label>Name</Label>
-                    <Input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Your full name" required />
+                    <Label>Employee Name</Label>
+                    <Input
+                      value={eName}
+                      onChange={(e) => setEName(e.target.value)}
+                      placeholder="Your full name (e.g. Ramesh Kumar)"
+                      required
+                      autoFocus
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Password</Label>
                     <div className="relative">
-                      <Input type={showEPassword ? "text" : "password"} value={ePass} onChange={(e) => setEPass(e.target.value)} required />
+                      <Input
+                        type={showEPassword ? "text" : "password"}
+                        value={ePass}
+                        onChange={(e) => setEPass(e.target.value)}
+                        placeholder="Enter your password"
+                        required
+                      />
                       <button
                         type="button"
                         onClick={() => setShowEPassword((prev) => !prev)}

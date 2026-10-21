@@ -15,10 +15,11 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UserPlus, Trash2, KeyRound, Pencil } from "lucide-react";
+import { UserPlus, Trash2, Pencil } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { createAppUser, sendResetEmail, nameKey } from "@/lib/user-admin";
+import { createAppUser, nameKey } from "@/lib/user-admin";
+import { ForceChangePasswordDialog } from "@/components/ForceChangePasswordDialog";
 
 export const Route = createFileRoute("/admin/employees")({
   component: () => (
@@ -63,18 +64,18 @@ function AdminEmployees() {
         .filter((e) => e.role === "employee" && scope.includes(e.projectId));
       setEmployees(emps);
 
-      // Backfill public name -> email lookup for existing employees so the
-      // name-only login flow works even for accounts created before this feature.
+      // Backfill public lookup for employees so name-only login flow works seamlessly
       await Promise.all(
-        emps.map((e) =>
-          e.name && e.email
-            ? setDoc(
-                doc(db, "employeeLogins", nameKey(e.name)),
-                { email: e.email, uid: e.id, name: e.name },
-                { merge: true },
-              ).catch(() => {})
-            : Promise.resolve(),
-        ),
+        emps.map((e) => {
+          const authEmail = e.authEmail || e.email;
+          if (!e.name || !authEmail) return Promise.resolve();
+          const loginData = { email: authEmail, uid: e.id, name: e.name };
+          const p1 = setDoc(doc(db, "employeeLogins", nameKey(e.name)), loginData, { merge: true }).catch(() => {});
+          const p2 = e.employeeID
+            ? setDoc(doc(db, "employeeLogins", nameKey(e.employeeID)), loginData, { merge: true }).catch(() => {})
+            : Promise.resolve();
+          return Promise.all([p1, p2]);
+        }),
       );
     } catch (e: any) {
       toast.error(e?.message || "Failed to load");
@@ -101,7 +102,7 @@ function AdminEmployees() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
-                <TableHead>Name</TableHead><TableHead>ID</TableHead><TableHead>Email</TableHead>
+                <TableHead>Name</TableHead><TableHead>Employee ID</TableHead>
                 <TableHead>Project</TableHead><TableHead>Location</TableHead><TableHead>Branches</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow></TableHeader>
@@ -110,7 +111,7 @@ function AdminEmployees() {
                   <EmployeeRow key={e.id} emp={e} reload={load} />
                 ))}
                 {!loading && employees.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">No employees yet</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">No employees yet</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -143,30 +144,23 @@ function EmployeeRow({ emp, reload }: { emp: any; reload: () => void }) {
     try {
       await deleteDoc(doc(db, "employees", emp.id));
       if (emp.name) await deleteDoc(doc(db, "employeeLogins", nameKey(emp.name))).catch(() => {});
+      if (emp.employeeID) await deleteDoc(doc(db, "employeeLogins", nameKey(emp.employeeID))).catch(() => {});
       toast.success("Removed");
       reload();
     } catch (e: any) { toast.error(e?.message); }
   };
 
-  const reset = async () => {
-    try {
-      await sendResetEmail(emp.email);
-      toast.success("Password reset email sent");
-    } catch (e: any) { toast.error(e?.message); }
-  };
-
   return (
     <TableRow>
-      <TableCell>{emp.name}</TableCell>
-      <TableCell>{emp.employeeID}</TableCell>
-      <TableCell className="text-xs">{emp.email}</TableCell>
+      <TableCell className="font-medium">{emp.name}</TableCell>
+      <TableCell className="font-mono text-xs">{emp.employeeID}</TableCell>
       <TableCell>{emp.projectName}</TableCell>
       <TableCell>{emp.location}</TableCell>
-      <TableCell className="text-xs">{(emp.branches || []).join(", ")}</TableCell>
+      <TableCell className="text-xs">{(emp.branches || []).join(", ") || "-"}</TableCell>
       <TableCell className="text-right whitespace-nowrap">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>
+            <Button size="sm" variant="ghost" title="Edit branches and location"><Pencil className="h-4 w-4" /></Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Edit {emp.name}</DialogTitle></DialogHeader>
@@ -177,8 +171,8 @@ function EmployeeRow({ emp, reload }: { emp: any; reload: () => void }) {
             <DialogFooter><Button onClick={save}>Save</Button></DialogFooter>
           </DialogContent>
         </Dialog>
-        <Button size="sm" variant="ghost" onClick={reset} title="Send password reset"><KeyRound className="h-4 w-4" /></Button>
-        <Button size="sm" variant="ghost" onClick={remove}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+        <ForceChangePasswordDialog user={emp} onUpdated={reload} />
+        <Button size="sm" variant="ghost" onClick={remove} title="Delete employee"><Trash2 className="h-4 w-4 text-destructive" /></Button>
       </TableCell>
     </TableRow>
   );
@@ -194,16 +188,16 @@ export function CreateEmployeeDialog({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
-    name: "", employeeID: "", email: "", password: "", location: "",
+    name: "", employeeID: "", password: "", location: "",
     projectId: "", branches: "",
   });
 
-  const reset = () => setForm({ name: "", employeeID: "", email: "", password: "", location: "", projectId: "", branches: "" });
+  const reset = () => setForm({ name: "", employeeID: "", password: "", location: "", projectId: "", branches: "" });
 
   const submit = async () => {
-    const { name, employeeID, email, password, location, projectId, branches } = form;
-    if (!name || !employeeID || !email || !password || !location || !projectId) {
-      toast.error("All fields except branches are required"); return;
+    const { name, employeeID, password, location, projectId, branches } = form;
+    if (!name.trim() || !employeeID.trim() || !password || !location.trim() || !projectId) {
+      toast.error("Full name, employee ID, location, password, and project are required"); return;
     }
     if (password.length < 6) { toast.error("Password must be 6+ chars"); return; }
     const project = projects.find((p) => p.id === projectId);
@@ -212,16 +206,19 @@ export function CreateEmployeeDialog({
     setBusy(true);
     try {
       await createAppUser({
-        name, employeeID, email, password, location,
+        name: name.trim(),
+        employeeID: employeeID.trim(),
+        password,
+        location: location.trim(),
         role: "employee",
         projectId: project.id,
         projectName: project.name,
         branches: branches.split(",").map((s: string) => s.trim()).filter(Boolean),
       });
-      toast.success("Employee created");
+      toast.success("Employee created successfully");
       reset(); setOpen(false); onCreated();
     } catch (e: any) {
-      toast.error(e?.message || "Failed");
+      toast.error(e?.message || "Failed to create employee");
     } finally { setBusy(false); }
   };
 
@@ -231,14 +228,18 @@ export function CreateEmployeeDialog({
         <Button><UserPlus className="h-4 w-4 mr-1" />New Employee</Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Create Employee</DialogTitle></DialogHeader>
-        <div className="grid gap-3">
-          <div><Label>Full Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+        <DialogHeader>
+          <DialogTitle>Create New Employee</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          Employees log in with their Name and Password. No email address is required.
+        </p>
+        <div className="grid gap-3 pt-1">
+          <div><Label>Full Name (Employee Login Name)</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Ramesh Kumar" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>Employee ID</Label><Input value={form.employeeID} onChange={(e) => setForm({ ...form, employeeID: e.target.value })} /></div>
-            <div><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="city/region" /></div>
+            <div><Label>Employee ID</Label><Input value={form.employeeID} onChange={(e) => setForm({ ...form, employeeID: e.target.value })} placeholder="EMP-101" /></div>
+            <div><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Chennai / Branch HQ" /></div>
           </div>
-          <div><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
           <div><Label>Initial Password</Label><Input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="min 6 chars" /></div>
           <div>
             <Label>Project</Label>
@@ -251,7 +252,7 @@ export function CreateEmployeeDialog({
           </div>
           <div><Label>Branches (comma separated)</Label><Input value={form.branches} onChange={(e) => setForm({ ...form, branches: e.target.value })} placeholder="Branch A, Branch B" /></div>
         </div>
-        <DialogFooter><Button onClick={submit} disabled={busy}>{busy ? "Creating..." : "Create"}</Button></DialogFooter>
+        <DialogFooter className="mt-2"><Button onClick={submit} disabled={busy}>{busy ? "Creating..." : "Create Employee"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

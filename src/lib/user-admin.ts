@@ -5,7 +5,18 @@ import {
   sendPasswordResetEmail,
   signOut as fbSignOut,
 } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  deleteDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db, auth } from "./firebase";
 import type { Role } from "./types";
 
@@ -22,7 +33,7 @@ function getSecondaryApp() {
 }
 
 export interface CreateUserInput {
-  email: string;
+  email?: string;
   password: string;
   name: string;
   employeeID: string;
@@ -38,14 +49,20 @@ export interface CreateUserInput {
  * Creates a Firebase Auth user using a secondary app instance so the
  * currently signed-in admin/superadmin session is NOT affected, then
  * writes the matching profile doc in /employees/{uid}.
+ * For employees, if email is omitted, an internal synthetic email is generated.
  */
 export async function createAppUser(input: CreateUserInput): Promise<string> {
   const secondary = getSecondaryApp();
   const secondaryAuth = getAuth(secondary);
   try {
+    const rawEmail = input.email?.trim().toLowerCase();
+    // For employees without an email address, generate an internal auth email
+    const authEmail =
+      rawEmail || `${nameKey(input.name)}_${Date.now()}@tvse-internal.local`;
+
     const cred = await createUserWithEmailAndPassword(
       secondaryAuth,
-      input.email.trim().toLowerCase(),
+      authEmail,
       input.password,
     );
     const uid = cred.user.uid;
@@ -53,7 +70,8 @@ export async function createAppUser(input: CreateUserInput): Promise<string> {
     await setDoc(doc(db, "employees", uid), {
       employeeID: input.employeeID.trim(),
       name: input.name.trim(),
-      email: input.email.trim().toLowerCase(),
+      email: rawEmail || "",
+      authEmail,
       location: input.location.trim(),
       role: input.role,
       projectId: input.projectId,
@@ -63,13 +81,21 @@ export async function createAppUser(input: CreateUserInput): Promise<string> {
       createdAt: serverTimestamp(),
     });
 
-    // Public name -> email lookup so employees can sign in with just their name.
+    // Public lookup so employees can sign in with their name (or Employee ID)
     if (input.role === "employee") {
-      await setDoc(doc(db, "employeeLogins", nameKey(input.name)), {
-        email: input.email.trim().toLowerCase(),
+      const loginPayload = {
+        email: authEmail,
         uid,
         name: input.name.trim(),
-      });
+      };
+      const key = nameKey(input.name);
+      if (key) {
+        await setDoc(doc(db, "employeeLogins", key), loginPayload);
+      }
+      const idKey = nameKey(input.employeeID);
+      if (idKey && idKey !== key) {
+        await setDoc(doc(db, "employeeLogins", idKey), loginPayload);
+      }
     }
 
     // sign the secondary app out so its session doesn't linger
@@ -88,10 +114,97 @@ export async function sendResetEmail(email: string) {
   await sendPasswordResetEmail(auth, email.trim().toLowerCase());
 }
 
+export interface ForceChangePasswordInput {
+  uid: string;
+  newPassword: string;
+}
+
+/**
+ * Forcibly updates an employee's password without requiring an email reset link.
+ * Used by Super Admin when an employee forgets their password.
+ */
+export async function forceChangeEmployeePassword(
+  input: ForceChangePasswordInput,
+): Promise<void> {
+  if (!input.newPassword || input.newPassword.length < 6) {
+    throw new Error("Password must be at least 6 characters");
+  }
+
+  const empRef = doc(db, "employees", input.uid);
+  const empSnap = await getDoc(empRef);
+  if (!empSnap.exists()) {
+    throw new Error("Employee record not found in system");
+  }
+  const empData = empSnap.data() as any;
+
+  const key = nameKey(empData.name || "employee");
+  const newAuthEmail = `${key}_${Date.now()}@tvse-internal.local`;
+
+  const secondary = getSecondaryApp();
+  const secondaryAuth = getAuth(secondary);
+
+  try {
+    // 1. Create a fresh Firebase Auth user with the new password
+    const cred = await createUserWithEmailAndPassword(
+      secondaryAuth,
+      newAuthEmail,
+      input.newPassword,
+    );
+    const newUid = cred.user.uid;
+
+    // 2. Clone employee profile under newUid
+    await setDoc(doc(db, "employees", newUid), {
+      ...empData,
+      uid: newUid,
+      authEmail: newAuthEmail,
+      passwordUpdatedAt: serverTimestamp(),
+    });
+
+    // 3. Update public employeeLogins lookup
+    const loginPayload = {
+      email: newAuthEmail,
+      uid: newUid,
+      name: empData.name,
+    };
+    if (key) {
+      await setDoc(doc(db, "employeeLogins", key), loginPayload);
+    }
+    const idKey = empData.employeeID ? nameKey(empData.employeeID) : "";
+    if (idKey && idKey !== key) {
+      await setDoc(doc(db, "employeeLogins", idKey), loginPayload);
+    }
+
+    // 4. Migrate existing checklist records so employee history is preserved
+    try {
+      const subSnap = await getDocs(
+        query(collection(db, "checklists"), where("uid", "==", input.uid)),
+      );
+      for (const sDoc of subSnap.docs) {
+        await updateDoc(sDoc.ref, { uid: newUid });
+      }
+    } catch (migErr) {
+      console.warn("Notice: Checklist history UID migration warning:", migErr);
+    }
+
+    // 5. Delete old employee profile doc if UID changed
+    if (newUid !== input.uid) {
+      await deleteDoc(empRef).catch(() => {});
+    }
+
+    await fbSignOut(secondaryAuth);
+  } finally {
+    try {
+      await deleteApp(secondary);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export interface UpdateUserRoleInput {
   uid: string;
   name: string;
-  email: string;
+  email?: string;
   employeeID: string;
   location: string;
   role: Role;
@@ -110,7 +223,7 @@ export async function updateUserRole(input: UpdateUserRoleInput): Promise<void> 
   const data: any = {
     name: input.name.trim(),
     employeeID: input.employeeID.trim(),
-    email: input.email.trim().toLowerCase(),
+    email: input.email ? input.email.trim().toLowerCase() : "",
     location: input.location.trim(),
     role: input.role,
     updatedAt: serverTimestamp(),
@@ -132,16 +245,25 @@ export async function updateUserRole(input: UpdateUserRoleInput): Promise<void> 
     data.adminProjects = [];
     data.branches = input.branches ?? [];
 
-    // Ensure public name lookup exists for employee login
-    await setDoc(
-      doc(db, "employeeLogins", nameKey(input.name)),
-      {
-        email: input.email.trim().toLowerCase(),
-        uid: input.uid,
-        name: input.name.trim(),
-      },
-      { merge: true },
-    );
+    // Ensure public lookup exists for employee login
+    const empSnap = await getDoc(ref);
+    const existingAuthEmail = empSnap.exists()
+      ? (empSnap.data().authEmail || empSnap.data().email)
+      : (input.email ? input.email.trim().toLowerCase() : "");
+
+    const loginPayload = {
+      email: existingAuthEmail || `${nameKey(input.name)}@tvse-internal.local`,
+      uid: input.uid,
+      name: input.name.trim(),
+    };
+    const key = nameKey(input.name);
+    if (key) {
+      await setDoc(doc(db, "employeeLogins", key), loginPayload, { merge: true });
+    }
+    const idKey = nameKey(input.employeeID);
+    if (idKey && idKey !== key) {
+      await setDoc(doc(db, "employeeLogins", idKey), loginPayload, { merge: true });
+    }
   }
 
   await setDoc(ref, data, { merge: true });

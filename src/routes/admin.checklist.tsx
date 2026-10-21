@@ -74,9 +74,12 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<string>("");
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setSyncError(null);
+    let capturedErr = "";
     try {
       // 1. Load projects
       const projSnap = await getDocs(collection(db, "projects"));
@@ -134,6 +137,7 @@ function AdminDashboard() {
         const subSnap = await getDocs(collection(db, "checklists"));
         subSnap.forEach((d) => addSubmission(d.id, d.data()));
       } catch (colErr: any) {
+        capturedErr = colErr?.message || String(colErr);
         console.warn("Collection-wide read not available, falling back to targeted queries:", colErr);
         // Strategy B: query by projectId for each project in scope
         for (const pid of projIdsInScope) {
@@ -141,7 +145,8 @@ function AdminDashboard() {
             const qs = query(collection(db, "checklists"), where("projectId", "==", pid));
             const snap = await getDocs(qs);
             snap.forEach((d) => addSubmission(d.id, d.data()));
-          } catch (e) {
+          } catch (e: any) {
+            capturedErr = e?.message || capturedErr;
             console.warn(`Query for projectId ${pid} failed:`, e);
           }
         }
@@ -154,7 +159,8 @@ function AdminDashboard() {
             const qs = query(collection(db, "checklists"), where("uid", "in", chunk));
             const snap = await getDocs(qs);
             snap.forEach((d) => addSubmission(d.id, d.data()));
-          } catch (e) {
+          } catch (e: any) {
+            capturedErr = e?.message || capturedErr;
             console.warn("Query for employee uids failed:", e);
           }
         }
@@ -180,15 +186,23 @@ function AdminDashboard() {
                         addSubmission(snap.id, snap.data());
                       }
                     })
-                    .catch(() => {})
+                    .catch((err: any) => {
+                      capturedErr = err?.message || capturedErr;
+                      console.warn("Direct doc lookup error:", docId, err);
+                    })
                 );
               }
             }
           }
           await Promise.all(directChecks);
         }
-      } catch (directErr) {
+      } catch (directErr: any) {
+        capturedErr = directErr?.message || capturedErr;
         console.warn("Direct doc lookups error:", directErr);
+      }
+
+      if (subsAll.length === 0 && capturedErr) {
+        setSyncError(capturedErr);
       }
 
       setSubmissions(subsAll);
@@ -350,6 +364,18 @@ function AdminDashboard() {
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground -mt-3">
           <Clock className="h-3.5 w-3.5 text-primary" />
           <span>Last synchronized: <strong>{lastRefreshed}</strong></span>
+        </div>
+      )}
+
+      {syncError && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold">Checklist Sync Warning: {syncError}</p>
+            <p className="text-xs text-muted-foreground">
+              If this mentions <strong>"Missing or insufficient permissions"</strong>, Firebase Firestore Security Rules in the cloud are blocking the admin account from reading the checklists collection. Please publish the contents of <code>firestore.rules</code> in the Firebase Console (Firestore Database &rarr; Rules &rarr; Publish).
+            </p>
+          </div>
         </div>
       )}
 

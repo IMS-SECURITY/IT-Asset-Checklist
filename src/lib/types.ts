@@ -4,7 +4,8 @@ export interface UserProfile {
   uid: string;
   employeeID: string;
   name: string;
-  email: string;
+  email?: string;
+  authEmail?: string;
   location: string;
   role: Role;
   projectId: string;

@@ -42,23 +42,17 @@ Can be created from `/super` via **"New Admin"** button, or via manual auth + Fi
 ```
 
 ## 6. Create an Employee
-1. Firebase Console → Authentication → Add user.
-2. Firestore → `employees` → doc ID = that UID:
-```json
-{
-  "employeeID": "EMP-001",
-  "name": "Jane Doe",
-  "email": "jane@company.com",
-  "location": "Chennai",
-  "role": "employee",
-  "projectId": "<projectId>",
-  "projectName": "Project Alpha",
-  "branches": ["Main", "Annex"]
-}
-```
-Employee logs in via the **Employee** tab with: **Employee ID + Location + Password**.
+Employees can be created directly from the app by **Super Admin** or **Project Admin** (via `/admin/employees` or `/super` → "New Employee"):
+- **No email required**: Employees do not need an email address.
+- Enter: Full Name, Employee ID, Location, Project, Initial Password, and Branches.
+- Employee logs in via the **Employee** tab with: **Employee Name + Password**.
 
-> Note: The spec called for "Location + Password" only, but multiple employees can share a location. The form adds Employee ID to uniquely identify the account; Location is still validated against the employee profile and login fails on mismatch.
+### Password Reset for Employees
+Since employees do not use emails, password reset links cannot be emailed to them. If an employee forgets their password:
+- **Super Admin** or **Project Admin** opens the Super Admin panel (`/super`) or Employees page (`/admin/employees`).
+- Click the **Key icon** (Force Change Password) on the employee's row.
+- Enter the new password and click **"Set New Password"**.
+- The employee can immediately sign in with their Name and this new password.
 
 ## Collections
 - `projects` — `{ name, createdAt }`

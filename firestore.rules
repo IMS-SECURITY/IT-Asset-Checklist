@@ -20,9 +20,9 @@ service cloud.firestore {
 
     match /employees/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isSuper() || isAdmin());
-      allow create, update, delete: if isSuper();
-      // Allow admins to update branches for employees in their projects
-      allow update: if isAdmin() && isAdminOf(resource.data.projectId);
+      allow create: if isSuper() || (isAdmin() && isAdminOf(request.resource.data.projectId));
+      allow update: if isSuper() || (isAdmin() && isAdminOf(resource.data.projectId));
+      allow delete: if isSuper();
     }
 
     // Public name -> email lookup so employees can sign in with their name only.

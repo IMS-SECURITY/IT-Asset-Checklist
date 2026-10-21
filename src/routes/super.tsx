@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { createAppUser, updateUserRole, sendResetEmail, nameKey } from "@/lib/user-admin";
 import type { Role } from "@/lib/types";
 import { CreateEmployeeDialog } from "./admin.employees";
+import { ForceChangePasswordDialog } from "@/components/ForceChangePasswordDialog";
 import { EmailRecipientsSection } from "@/components/EmailRecipientsSection";
 import { SendNowSection } from "@/components/SendNowSection";
 import * as XLSX from "xlsx";
@@ -282,6 +283,7 @@ export function EditUserRoleDialog({
   const [role, setRole] = useState<Role>(user.role || "employee");
   const [name, setName] = useState(user.name || "");
   const [employeeID, setEmployeeID] = useState(user.employeeID || "");
+  const [email, setEmail] = useState(user.email || "");
   const [location, setLocation] = useState(user.location || "");
   const [projectId, setProjectId] = useState(user.projectId || "");
   const [adminProjects, setAdminProjects] = useState<string[]>(
@@ -294,6 +296,7 @@ export function EditUserRoleDialog({
       setRole(user.role || "employee");
       setName(user.name || "");
       setEmployeeID(user.employeeID || "");
+      setEmail(user.email || "");
       setLocation(user.location || "");
       setProjectId(user.projectId || "");
       setAdminProjects(user.adminProjects || (user.projectId ? [user.projectId] : []));
@@ -313,6 +316,11 @@ export function EditUserRoleDialog({
       return;
     }
 
+    if ((role === "admin" || role === "superadmin") && !email.trim()) {
+      toast.error("Email is required for Admin and Super Admin sign-in");
+      return;
+    }
+
     if (profile?.uid === user.id && user.role === "superadmin" && role !== "superadmin") {
       const confirmDemote = confirm("Warning: You are changing your OWN role away from Super Admin! You may lose access to this panel. Are you sure?");
       if (!confirmDemote) return;
@@ -327,7 +335,7 @@ export function EditUserRoleDialog({
         uid: user.id,
         name,
         employeeID,
-        email: user.email || "",
+        email: role === "employee" ? "" : email.trim().toLowerCase(),
         location,
         role,
         projectId: role === "superadmin" ? "" : projectId,
@@ -409,8 +417,14 @@ export function EditUserRoleDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Email (Read only)</Label>
-              <Input value={user.email} disabled className="bg-muted text-muted-foreground" />
+              <Label>Email {role === "employee" ? "(Not required)" : "(Sign-in email)"}</Label>
+              <Input
+                value={role === "employee" ? "" : email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={role === "employee"}
+                placeholder={role === "employee" ? "No email required (Name login)" : "admin@example.com"}
+                className={role === "employee" ? "bg-muted text-muted-foreground" : ""}
+              />
             </div>
             <div>
               <Label>Location</Label>
@@ -832,7 +846,13 @@ function UsersManagementSection({
                       </TableCell>
                       <TableCell>{roleBadge}</TableCell>
                       <TableCell className="font-mono text-xs">{u.employeeID}</TableCell>
-                      <TableCell className="text-xs">{u.email}</TableCell>
+                      <TableCell className="text-xs">
+                        {u.email ? (
+                          u.email
+                        ) : (
+                          <span className="text-muted-foreground italic">None (Name sign in)</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {u.role === "superadmin" ? (
                           <span className="text-xs text-muted-foreground">All Projects</span>
@@ -855,14 +875,19 @@ function UsersManagementSection({
                       <TableCell className="text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           <EditUserRoleDialog user={u} projects={projects} onUpdated={reload} />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleResetPassword(u.email)}
-                            title="Send Password Reset Email"
-                          >
-                            <KeyRound className="h-4 w-4" />
-                          </Button>
+                          {u.role === "employee" ? (
+                            <ForceChangePasswordDialog user={u} onUpdated={reload} />
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleResetPassword(u.email)}
+                              title={u.email ? `Send Password Reset Email to ${u.email}` : "No email configured"}
+                              disabled={!u.email}
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
